@@ -6,8 +6,8 @@
   <title>Choreography Mode (PDF + Terms + Formations)</title>
 
   <!-- PDF.js (CDN) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.js"></script>
-
+<script src="vendor/pdfjs/pdf.min.js"></script>
+  
   <style>
     :root{
       --bg:#0b1020;
@@ -770,9 +770,8 @@
   /***********************
    * PDF.js rendering
    ***********************/
-  pdfjsLib.GlobalWorkerOptions.workerSrc =
-    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.js";
-
+pdfjsLib.GlobalWorkerOptions.workerSrc = "vendor/pdfjs/pdf.worker.min.js";
+  
   async function loadPdfFromFile(file){
     const buf = await file.arrayBuffer();
     state.pdf = await pdfjsLib.getDocument({ data: buf }).promise;
