@@ -819,14 +819,17 @@
   }
 
   pdfFile.addEventListener("change", async () => {
-    const file = pdfFile.files?.[0];
-    if(!file) return;
-    if(file.type !== "application/pdf"){
-      alert("Please choose a PDF file.");
-      return;
-    }
-    await loadPdfFromFile(file);
-  });
+  const file = pdfFile.files?.[0];
+  if (!file) return;
+
+  const isPdfByName = (file.name || "").toLowerCase().endsWith(".pdf");
+  if (!isPdfByName) {
+    alert("Please choose a PDF file (.pdf).");
+    return;
+  }
+
+  await loadPdfFromFile(file);
+});
 
   $("prevPage").addEventListener("click", async () => {
     if(!state.pdf) return;
