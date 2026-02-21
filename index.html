@@ -584,8 +584,8 @@
 <input id="hiddenImport" type="file" accept="application/json" style="display:none;" />
 
 <!-- PDF.js (local) – load right before app script for guaranteed order -->
-<script src="vendor/pdfjs/pdf.min.js"></script>
-
+<script src="./vendor/pdfjs/pdf.min.js"></script>
+  
 <script>
 /***********************
  * Guard: PDF.js present?
@@ -597,8 +597,8 @@ if (!window.pdfjsLib) {
 /***********************
  * PDF.js worker path
  ***********************/
-pdfjsLib.GlobalWorkerOptions.workerSrc = "vendor/pdfjs/pdf.worker.min.js";
-
+pdfjsLib.GlobalWorkerOptions.workerSrc = "./vendor/pdfjs/pdf.worker.min.js";
+  
 /***********************
  * Basic state
  ***********************/
