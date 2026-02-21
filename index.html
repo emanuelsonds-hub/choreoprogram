@@ -5,9 +5,6 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Choreography Mode (PDF + Terms + Formations)</title>
 
-  <!-- PDF.js (CDN) -->
-<script src="vendor/pdfjs/pdf.min.js"></script>
-  
   <style>
     :root{
       --bg:#0b1020;
@@ -583,241 +580,218 @@
   </div>
 </div>
 
-<!-- Import/Export modal (simple prompt/confirm replacements) -->
+<!-- Import/Export modal -->
 <input id="hiddenImport" type="file" accept="application/json" style="display:none;" />
-</body>
-  <script>
-  /***********************
-   * Basic state
-   ***********************/
-  const DEFAULT_TERMS = [
-    "Step-touch", "Grapevine", "Pivot", "Jazz square", "Kick-ball-change",
-    "Ripple", "Canon", "Freeze", "Level change", "Diagonal travel"
-  ];
 
-  const state = {
-    pdf: null,
-    pdfName: null,
-    pageNum: 1,
-    pageCount: 0,
-    zoom: 1.0,
+<!-- PDF.js (local) – load right before app script for guaranteed order -->
+<script src="vendor/pdfjs/pdf.min.js"></script>
 
-    // overlaysByPage: { [pageNum]: [{id,text,x,y}] } x/y are normalized 0..1 relative to rendered page
-    overlaysByPage: {},
+<script>
+/***********************
+ * Guard: PDF.js present?
+ ***********************/
+if (!window.pdfjsLib) {
+  throw new Error("PDF.js failed to load. Check that vendor/pdfjs/pdf.min.js exists and is reachable.");
+}
 
-    // formations: tokens placed on axis
-    // placedStudents: [{id,name, t}] where t is 0..1 along axis (0=20L, .5=center, 1=20R)
-    placedStudents: [],
-    // student bank (names)
-    students: [],
-
-    // term bank
-    terms: [...DEFAULT_TERMS]
-  };
-
-  const $ = (id) => document.getElementById(id);
-
-  const pdfFile = $("pdfFile");
-  const statusEl = $("status");
-  const pdfNameEl = $("pdfName");
-  const pageNumEl = $("pageNum");
-  const pageCountEl = $("pageCount");
-  const zoomLabel = $("zoomLabel");
-
-  const pdfCanvas = $("pdfCanvas");
-  const overlayLayer = $("overlayLayer");
-  const pdfInner = $("pdfInner");
-  const pdfStage = $("pdfStage");
-  const pdfWrap = $("pdfWrap");
-
-  const termList = $("termList");
-  const newTerm = $("newTerm");
-
-  const termsPanel = $("termsPanel");
-  const formationsWindow = $("formationsWindow");
-  const axis = $("axis");
-  const studentRack = $("studentRack");
-
-  const hiddenImport = $("hiddenImport");
-
-  /***********************
-   * Helpers
-   ***********************/
-  function uid(prefix="id"){
-    return prefix + "_" + Math.random().toString(16).slice(2) + Date.now().toString(16);
-  }
-
-  function clamp(n, min, max){ return Math.max(min, Math.min(max, n)); }
-
-  function setStatus(text){ statusEl.textContent = text; }
-
-  function currentPageOverlays(){
-    const p = String(state.pageNum);
-    if(!state.overlaysByPage[p]) state.overlaysByPage[p] = [];
-    return state.overlaysByPage[p];
-  }
-
-  function getCanvasRect(){
-    return pdfCanvas.getBoundingClientRect();
-  }
-
-  function getInnerRect(){
-    return pdfInner.getBoundingClientRect();
-  }
-
-  function normalizedFromClientXY(clientX, clientY){
-    // normalize relative to pdfCanvas area
-    const r = getCanvasRect();
-    const x = (clientX - r.left) / r.width;
-    const y = (clientY - r.top) / r.height;
-    return { x: clamp(x, 0, 1), y: clamp(y, 0, 1) };
-  }
-
-  function clientFromNormalized(x, y){
-    // position within overlayLayer (same size as canvas)
-    return {
-      left: (x * pdfCanvas.width) + "px",
-      top: (y * pdfCanvas.height) + "px"
-    };
-  }
-
-  function updateZoomLabel(){
-    zoomLabel.textContent = Math.round(state.zoom * 100) + "%";
-  }
-
-  /***********************
-   * Term bank rendering
-   ***********************/
-  function renderTermBank(){
-    termList.innerHTML = "";
-    state.terms.forEach((t) => {
-      const pill = document.createElement("div");
-      pill.className = "pill";
-      pill.draggable = true;
-      pill.textContent = t;
-
-      pill.addEventListener("dragstart", (e) => {
-        e.dataTransfer.setData("text/plain", JSON.stringify({ type:"term", text:t }));
-      });
-
-      termList.appendChild(pill);
-    });
-  }
-
-  $("addTerm").addEventListener("click", () => {
-    const val = (newTerm.value || "").trim();
-    if(!val) return;
-    state.terms.push(val);
-    newTerm.value = "";
-    renderTermBank();
-  });
-
-  newTerm.addEventListener("keydown", (e) => {
-    if(e.key === "Enter") $("addTerm").click();
-  });
-
-  /***********************
-   * Overlay rendering (terms on PDF)
-   ***********************/
-  function renderOverlays(){
-    overlayLayer.innerHTML = "";
-    const overlays = currentPageOverlays();
-
-    overlays.forEach((o) => {
-      const el = document.createElement("div");
-      el.className = "termOverlay";
-      el.dataset.id = o.id;
-      el.innerHTML = `
-        <span>${escapeHtml(o.text)}</span>
-        <span class="x" title="Delete">×</span>
-      `;
-
-      // position
-      el.style.left = (o.x * pdfCanvas.width) + "px";
-      el.style.top  = (o.y * pdfCanvas.height) + "px";
-
-      // delete
-      el.querySelector(".x").addEventListener("click", (e) => {
-        e.stopPropagation();
-        const idx = overlays.findIndex(x => x.id === o.id);
-        if(idx >= 0) overlays.splice(idx, 1);
-        renderOverlays();
-      });
-
-      // drag move (pointer)
-      makeDraggable(el, {
-        onMove: (clientX, clientY) => {
-          const n = normalizedFromClientXY(clientX, clientY);
-          o.x = n.x; o.y = n.y;
-          el.style.left = (o.x * pdfCanvas.width) + "px";
-          el.style.top  = (o.y * pdfCanvas.height) + "px";
-        }
-      });
-
-      overlayLayer.appendChild(el);
-    });
-  }
-
-  function escapeHtml(s){
-    return String(s)
-      .replaceAll("&","&amp;")
-      .replaceAll("<","&lt;")
-      .replaceAll(">","&gt;")
-      .replaceAll('"',"&quot;")
-      .replaceAll("'","&#039;");
-  }
-
-  /***********************
-   * PDF.js rendering
-   ***********************/
+/***********************
+ * PDF.js worker path
+ ***********************/
 pdfjsLib.GlobalWorkerOptions.workerSrc = "vendor/pdfjs/pdf.worker.min.js";
-  
-  async function loadPdfFromFile(file){
-    const buf = await file.arrayBuffer();
-    state.pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-    state.pdfName = file.name;
-    state.pageCount = state.pdf.numPages;
-    state.pageNum = 1;
-    state.zoom = 1.0;
-    state.overlaysByPage = {}; // new doc starts empty
 
-    pdfNameEl.textContent = file.name;
-    pageCountEl.textContent = String(state.pageCount);
-    setStatus("Loaded: " + file.name);
-    updateZoomLabel();
+/***********************
+ * Basic state
+ ***********************/
+const DEFAULT_TERMS = [
+  "Step-touch", "Grapevine", "Pivot", "Jazz square", "Kick-ball-change",
+  "Ripple", "Canon", "Freeze", "Level change", "Diagonal travel"
+];
 
-    await renderPage();
-  }
+const state = {
+  pdf: null,
+  pdfName: null,
+  pageNum: 1,
+  pageCount: 0,
+  zoom: 1.0,
+  overlaysByPage: {},
+  placedStudents: [],
+  students: [],
+  terms: [...DEFAULT_TERMS]
+};
 
-  async function renderPage(){
-    if(!state.pdf) return;
+const $ = (id) => document.getElementById(id);
 
-    const page = await state.pdf.getPage(state.pageNum);
-    const viewport = page.getViewport({ scale: state.zoom });
+const pdfFile = $("pdfFile");
+const statusEl = $("status");
+const pdfNameEl = $("pdfName");
+const pageNumEl = $("pageNum");
+const pageCountEl = $("pageCount");
+const zoomLabel = $("zoomLabel");
 
-    const ctx = pdfCanvas.getContext("2d");
-    pdfCanvas.width = Math.floor(viewport.width);
-    pdfCanvas.height = Math.floor(viewport.height);
+const pdfCanvas = $("pdfCanvas");
+const overlayLayer = $("overlayLayer");
+const pdfInner = $("pdfInner");
+const pdfStage = $("pdfStage");
+const pdfWrap = $("pdfWrap");
 
-    // Keep overlay layer sized to canvas
-    overlayLayer.style.width = pdfCanvas.width + "px";
-    overlayLayer.style.height = pdfCanvas.height + "px";
+const termList = $("termList");
+const newTerm = $("newTerm");
 
-    // Resize pdfInner to wrap canvas
-    pdfInner.style.width = pdfCanvas.width + "px";
-    pdfInner.style.height = pdfCanvas.height + "px";
+const termsPanel = $("termsPanel");
+const formationsWindow = $("formationsWindow");
+const axis = $("axis");
+const studentRack = $("studentRack");
 
-    // Render
-    await page.render({ canvasContext: ctx, viewport }).promise;
+const hiddenImport = $("hiddenImport");
 
-    // Update UI
-    pageNumEl.textContent = String(state.pageNum);
+/***********************
+ * Helpers
+ ***********************/
+function uid(prefix="id"){
+  return prefix + "_" + Math.random().toString(16).slice(2) + Date.now().toString(16);
+}
+function clamp(n, min, max){ return Math.max(min, Math.min(max, n)); }
+function setStatus(text){ statusEl.textContent = text; }
 
-    // Repaint overlays at new size
-    renderOverlays();
-  }
+function currentPageOverlays(){
+  const p = String(state.pageNum);
+  if(!state.overlaysByPage[p]) state.overlaysByPage[p] = [];
+  return state.overlaysByPage[p];
+}
+function getCanvasRect(){ return pdfCanvas.getBoundingClientRect(); }
 
-  pdfFile.addEventListener("change", async () => {
+function normalizedFromClientXY(clientX, clientY){
+  const r = getCanvasRect();
+  const x = (clientX - r.left) / r.width;
+  const y = (clientY - r.top) / r.height;
+  return { x: clamp(x, 0, 1), y: clamp(y, 0, 1) };
+}
+function updateZoomLabel(){
+  zoomLabel.textContent = Math.round(state.zoom * 100) + "%";
+}
+
+/***********************
+ * Term bank rendering
+ ***********************/
+function renderTermBank(){
+  termList.innerHTML = "";
+  state.terms.forEach((t) => {
+    const pill = document.createElement("div");
+    pill.className = "pill";
+    pill.draggable = true;
+    pill.textContent = t;
+
+    pill.addEventListener("dragstart", (e) => {
+      e.dataTransfer.setData("text/plain", JSON.stringify({ type:"term", text:t }));
+    });
+
+    termList.appendChild(pill);
+  });
+}
+
+$("addTerm").addEventListener("click", () => {
+  const val = (newTerm.value || "").trim();
+  if(!val) return;
+  state.terms.push(val);
+  newTerm.value = "";
+  renderTermBank();
+});
+
+newTerm.addEventListener("keydown", (e) => {
+  if(e.key === "Enter") $("addTerm").click();
+});
+
+/***********************
+ * Overlay rendering
+ ***********************/
+function escapeHtml(s){
+  return String(s)
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
+
+function renderOverlays(){
+  overlayLayer.innerHTML = "";
+  const overlays = currentPageOverlays();
+
+  overlays.forEach((o) => {
+    const el = document.createElement("div");
+    el.className = "termOverlay";
+    el.dataset.id = o.id;
+    el.innerHTML = `
+      <span>${escapeHtml(o.text)}</span>
+      <span class="x" title="Delete">×</span>
+    `;
+
+    el.style.left = (o.x * pdfCanvas.width) + "px";
+    el.style.top  = (o.y * pdfCanvas.height) + "px";
+
+    el.querySelector(".x").addEventListener("click", (e) => {
+      e.stopPropagation();
+      const idx = overlays.findIndex(x => x.id === o.id);
+      if(idx >= 0) overlays.splice(idx, 1);
+      renderOverlays();
+    });
+
+    makeDraggable(el, {
+      onMove: (clientX, clientY) => {
+        const n = normalizedFromClientXY(clientX, clientY);
+        o.x = n.x; o.y = n.y;
+        el.style.left = (o.x * pdfCanvas.width) + "px";
+        el.style.top  = (o.y * pdfCanvas.height) + "px";
+      }
+    });
+
+    overlayLayer.appendChild(el);
+  });
+}
+
+/***********************
+ * PDF rendering
+ ***********************/
+async function loadPdfFromFile(file){
+  const buf = await file.arrayBuffer();
+  state.pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  state.pdfName = file.name;
+  state.pageCount = state.pdf.numPages;
+  state.pageNum = 1;
+  state.zoom = 1.0;
+  state.overlaysByPage = {};
+
+  pdfNameEl.textContent = file.name;
+  pageCountEl.textContent = String(state.pageCount);
+  setStatus("Loaded: " + file.name);
+  updateZoomLabel();
+
+  await renderPage();
+}
+
+async function renderPage(){
+  if(!state.pdf) return;
+
+  const page = await state.pdf.getPage(state.pageNum);
+  const viewport = page.getViewport({ scale: state.zoom });
+
+  const ctx = pdfCanvas.getContext("2d");
+  pdfCanvas.width = Math.floor(viewport.width);
+  pdfCanvas.height = Math.floor(viewport.height);
+
+  overlayLayer.style.width = pdfCanvas.width + "px";
+  overlayLayer.style.height = pdfCanvas.height + "px";
+
+  pdfInner.style.width = pdfCanvas.width + "px";
+  pdfInner.style.height = pdfCanvas.height + "px";
+
+  await page.render({ canvasContext: ctx, viewport }).promise;
+
+  pageNumEl.textContent = String(state.pageNum);
+  renderOverlays();
+}
+
+pdfFile.addEventListener("change", async () => {
   const file = pdfFile.files?.[0];
   if (!file) return;
 
@@ -830,405 +804,369 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = "vendor/pdfjs/pdf.worker.min.js";
   await loadPdfFromFile(file);
 });
 
-  $("prevPage").addEventListener("click", async () => {
-    if(!state.pdf) return;
-    state.pageNum = Math.max(1, state.pageNum - 1);
-    await renderPage();
-  });
-  $("nextPage").addEventListener("click", async () => {
-    if(!state.pdf) return;
-    state.pageNum = Math.min(state.pageCount, state.pageNum + 1);
-    await renderPage();
-  });
+$("prevPage").addEventListener("click", async () => {
+  if(!state.pdf) return;
+  state.pageNum = Math.max(1, state.pageNum - 1);
+  await renderPage();
+});
+$("nextPage").addEventListener("click", async () => {
+  if(!state.pdf) return;
+  state.pageNum = Math.min(state.pageCount, state.pageNum + 1);
+  await renderPage();
+});
 
-  $("zoomIn").addEventListener("click", async () => {
-    if(!state.pdf) return;
-    state.zoom = clamp(state.zoom + 0.1, 0.3, 3.0);
-    updateZoomLabel();
-    await renderPage();
-  });
-  $("zoomOut").addEventListener("click", async () => {
-    if(!state.pdf) return;
-    state.zoom = clamp(state.zoom - 0.1, 0.3, 3.0);
-    updateZoomLabel();
-    await renderPage();
-  });
+$("zoomIn").addEventListener("click", async () => {
+  if(!state.pdf) return;
+  state.zoom = clamp(state.zoom + 0.1, 0.3, 3.0);
+  updateZoomLabel();
+  await renderPage();
+});
+$("zoomOut").addEventListener("click", async () => {
+  if(!state.pdf) return;
+  state.zoom = clamp(state.zoom - 0.1, 0.3, 3.0);
+  updateZoomLabel();
+  await renderPage();
+});
 
-  $("fitWidth").addEventListener("click", async () => {
-    if(!state.pdf) return;
-    const page = await state.pdf.getPage(state.pageNum);
-    const unscaled = page.getViewport({ scale: 1.0 });
-    // Fit inside pdfStage width (minus padding & borders)
-    const available = pdfStage.clientWidth - 28; // stage padding ~14*2
-    state.zoom = clamp(available / unscaled.width, 0.3, 3.0);
-    updateZoomLabel();
-    await renderPage();
-  });
+$("fitWidth").addEventListener("click", async () => {
+  if(!state.pdf) return;
+  const page = await state.pdf.getPage(state.pageNum);
+  const unscaled = page.getViewport({ scale: 1.0 });
+  const available = pdfStage.clientWidth - 28;
+  state.zoom = clamp(available / unscaled.width, 0.3, 3.0);
+  updateZoomLabel();
+  await renderPage();
+});
 
-  $("fitPage").addEventListener("click", async () => {
-    if(!state.pdf) return;
-    const page = await state.pdf.getPage(state.pageNum);
-    const unscaled = page.getViewport({ scale: 1.0 });
-    const availableW = pdfStage.clientWidth - 28;
-    const availableH = pdfStage.clientHeight - 28;
-    const scale = Math.min(availableW / unscaled.width, availableH / unscaled.height);
-    state.zoom = clamp(scale, 0.3, 3.0);
-    updateZoomLabel();
-    await renderPage();
-  });
+$("fitPage").addEventListener("click", async () => {
+  if(!state.pdf) return;
+  const page = await state.pdf.getPage(state.pageNum);
+  const unscaled = page.getViewport({ scale: 1.0 });
+  const availableW = pdfStage.clientWidth - 28;
+  const availableH = pdfStage.clientHeight - 28;
+  const scale = Math.min(availableW / unscaled.width, availableH / unscaled.height);
+  state.zoom = clamp(scale, 0.3, 3.0);
+  updateZoomLabel();
+  await renderPage();
+});
 
-  /***********************
-   * Drag-drop terms onto PDF
-   ***********************/
-  function setDropHint(on){
-    pdfWrap.classList.toggle("dropHint", !!on);
-  }
-
-  ["dragenter","dragover"].forEach(evt => {
-    pdfWrap.addEventListener(evt, (e) => {
-      if(!state.pdf) return;
-      e.preventDefault();
-      setDropHint(true);
-    });
-  });
-  ["dragleave","drop"].forEach(evt => {
-    pdfWrap.addEventListener(evt, (e) => {
-      setDropHint(false);
-    });
-  });
-
-  pdfWrap.addEventListener("drop", (e) => {
+/***********************
+ * Drag-drop terms onto PDF
+ ***********************/
+function setDropHint(on){
+  pdfWrap.classList.toggle("dropHint", !!on);
+}
+["dragenter","dragover"].forEach(evt => {
+  pdfWrap.addEventListener(evt, (e) => {
     if(!state.pdf) return;
     e.preventDefault();
-
-    let payload;
-    try{
-      payload = JSON.parse(e.dataTransfer.getData("text/plain") || "{}");
-    }catch{
-      payload = null;
-    }
-    if(!payload || payload.type !== "term") return;
-
-    const n = normalizedFromClientXY(e.clientX, e.clientY);
-    const overlays = currentPageOverlays();
-    overlays.push({ id: uid("term"), text: payload.text, x: n.x, y: n.y });
-    renderOverlays();
+    setDropHint(true);
   });
+});
+["dragleave","drop"].forEach(evt => {
+  pdfWrap.addEventListener(evt, () => setDropHint(false));
+});
 
-  /***********************
-   * Pointer-based draggable utility
-   ***********************/
-  function makeDraggable(el, { onMove, onDown, onUp } = {}){
-    let dragging = false;
+pdfWrap.addEventListener("drop", (e) => {
+  if(!state.pdf) return;
+  e.preventDefault();
 
-    const down = (e) => {
-      // ignore clicks on delete buttons
-      if(e.target?.classList?.contains("x")) return;
+  let payload;
+  try{ payload = JSON.parse(e.dataTransfer.getData("text/plain") || "{}"); }
+  catch{ payload = null; }
 
-      dragging = true;
-      el.setPointerCapture?.(e.pointerId);
-      onDown?.(e.clientX, e.clientY);
-      e.preventDefault();
-    };
-    const move = (e) => {
-      if(!dragging) return;
-      onMove?.(e.clientX, e.clientY);
-      e.preventDefault();
-    };
-    const up = (e) => {
-      if(!dragging) return;
-      dragging = false;
-      onUp?.(e.clientX, e.clientY);
-      e.preventDefault();
-    };
+  if(!payload || payload.type !== "term") return;
 
-    el.addEventListener("pointerdown", down);
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-  }
+  const n = normalizedFromClientXY(e.clientX, e.clientY);
+  const overlays = currentPageOverlays();
+  overlays.push({ id: uid("term"), text: payload.text, x: n.x, y: n.y });
+  renderOverlays();
+});
 
-  /***********************
-   * Formations window / axis
-   ***********************/
-  function openFormations(){
-    formationsWindow.style.display = "block";
-    renderAxisTicks();
-    renderStudentRack();
-    renderPlacedStudents();
-  }
+/***********************
+ * Draggable utility
+ ***********************/
+function makeDraggable(el, { onMove, onDown, onUp } = {}){
+  let dragging = false;
 
-  function closeFormations(){
-    formationsWindow.style.display = "none";
-  }
-
-  $("toggleFormations").addEventListener("click", () => {
-    const showing = formationsWindow.style.display === "block";
-    showing ? closeFormations() : openFormations();
-  });
-  $("closeFormations").addEventListener("click", closeFormations);
-
-  function renderAxisTicks(){
-    // ticks at 20L, 15L, 10L, 5L, 0, 5R, 10R, 15R, 20R
-    // t: 0..1
-    axis.querySelectorAll(".tick,.tickLabel").forEach(n => n.remove());
-    const points = [
-      { label:"20L", t:0.00 },
-      { label:"15L", t:0.125 },
-      { label:"10L", t:0.25 },
-      { label:"5L",  t:0.375 },
-      { label:"0",   t:0.50 },
-      { label:"5R",  t:0.625 },
-      { label:"10R", t:0.75 },
-      { label:"15R", t:0.875 },
-      { label:"20R", t:1.00 }
-    ];
-    points.forEach(p => {
-      const tick = document.createElement("div");
-      tick.className = "tick";
-      tick.style.left = `calc(${p.t * 100}% )`;
-      axis.appendChild(tick);
-
-      const label = document.createElement("div");
-      label.className = "tickLabel";
-      label.style.left = `calc(${p.t * 100}% )`;
-      label.textContent = p.label;
-      axis.appendChild(label);
-    });
-  }
-
-  function renderStudentRack(){
-    studentRack.innerHTML = "";
-    state.students.forEach(name => {
-      const pill = document.createElement("div");
-      pill.className = "rackPill";
-      pill.textContent = name;
-      pill.draggable = true;
-
-      pill.addEventListener("dragstart", (e) => {
-        e.dataTransfer.setData("text/plain", JSON.stringify({ type:"student", name }));
-      });
-
-      studentRack.appendChild(pill);
-    });
-
-    if(state.students.length === 0){
-      const empty = document.createElement("div");
-      empty.className = "hint";
-      empty.textContent = "No students added yet. Add names on the left, then drag here.";
-      studentRack.appendChild(empty);
-    }
-  }
-
-  function axisClientToT(clientX){
-    const r = axis.getBoundingClientRect();
-    const x = clamp((clientX - r.left) / r.width, 0, 1);
-    return x;
-  }
-
-  // Allow dropping students onto axis
-  ["dragenter","dragover"].forEach(evt => {
-    axis.addEventListener(evt, (e) => {
-      e.preventDefault();
-    });
-  });
-
-  axis.addEventListener("drop", (e) => {
+  const down = (e) => {
+    if(e.target?.classList?.contains("x")) return;
+    dragging = true;
+    el.setPointerCapture?.(e.pointerId);
+    onDown?.(e.clientX, e.clientY);
     e.preventDefault();
-    let payload;
-    try{
-      payload = JSON.parse(e.dataTransfer.getData("text/plain") || "{}");
-    }catch{ payload = null; }
-    if(!payload || payload.type !== "student") return;
+  };
+  const move = (e) => {
+    if(!dragging) return;
+    onMove?.(e.clientX, e.clientY);
+    e.preventDefault();
+  };
+  const up = (e) => {
+    if(!dragging) return;
+    dragging = false;
+    onUp?.(e.clientX, e.clientY);
+    e.preventDefault();
+  };
 
-    const t = axisClientToT(e.clientX);
-    state.placedStudents.push({ id: uid("stu"), name: payload.name, t });
-    renderPlacedStudents();
+  el.addEventListener("pointerdown", down);
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", up);
+}
+
+/***********************
+ * Formations window / axis
+ ***********************/
+function openFormations(){
+  formationsWindow.style.display = "block";
+  renderAxisTicks();
+  renderStudentRack();
+  renderPlacedStudents();
+}
+function closeFormations(){
+  formationsWindow.style.display = "none";
+}
+
+$("toggleFormations").addEventListener("click", () => {
+  const showing = formationsWindow.style.display === "block";
+  showing ? closeFormations() : openFormations();
+});
+$("closeFormations").addEventListener("click", closeFormations);
+
+function renderAxisTicks(){
+  axis.querySelectorAll(".tick,.tickLabel").forEach(n => n.remove());
+  const points = [
+    { label:"20L", t:0.00 },
+    { label:"15L", t:0.125 },
+    { label:"10L", t:0.25 },
+    { label:"5L",  t:0.375 },
+    { label:"0",   t:0.50 },
+    { label:"5R",  t:0.625 },
+    { label:"10R", t:0.75 },
+    { label:"15R", t:0.875 },
+    { label:"20R", t:1.00 }
+  ];
+  points.forEach(p => {
+    const tick = document.createElement("div");
+    tick.className = "tick";
+    tick.style.left = `calc(${p.t * 100}% )`;
+    axis.appendChild(tick);
+
+    const label = document.createElement("div");
+    label.className = "tickLabel";
+    label.style.left = `calc(${p.t * 100}% )`;
+    label.textContent = p.label;
+    axis.appendChild(label);
   });
+}
 
-  function renderPlacedStudents(){
-    // remove old tokens
-    axis.querySelectorAll(".student").forEach(n => n.remove());
+function renderStudentRack(){
+  studentRack.innerHTML = "";
+  state.students.forEach(name => {
+    const pill = document.createElement("div");
+    pill.className = "rackPill";
+    pill.textContent = name;
+    pill.draggable = true;
 
-    const r = axis.getBoundingClientRect();
-
-    state.placedStudents.forEach((s) => {
-      const el = document.createElement("div");
-      el.className = "student";
-      el.dataset.id = s.id;
-      el.innerHTML = `
-        <span>${escapeHtml(s.name)}</span>
-        <span class="x" title="Remove">×</span>
-      `;
-
-      // position within axis (absolute)
-      // axis is position:relative (in CSS by default it's not; so set here)
-      axis.style.position = "relative";
-
-      const px = s.t * axis.clientWidth;
-      const py = axis.clientHeight * 0.20; // a bit above the line
-      el.style.left = (px - 10) + "px";
-      el.style.top  = py + "px";
-
-      // delete
-      el.querySelector(".x").addEventListener("click", (e) => {
-        e.stopPropagation();
-        state.placedStudents = state.placedStudents.filter(x => x.id !== s.id);
-        renderPlacedStudents();
-      });
-
-      // drag along axis
-      makeDraggable(el, {
-        onMove: (clientX) => {
-          s.t = axisClientToT(clientX);
-          const newX = s.t * axis.clientWidth;
-          el.style.left = (newX - 10) + "px";
-        }
-      });
-
-      axis.appendChild(el);
+    pill.addEventListener("dragstart", (e) => {
+      e.dataTransfer.setData("text/plain", JSON.stringify({ type:"student", name }));
     });
+
+    studentRack.appendChild(pill);
+  });
+
+  if(state.students.length === 0){
+    const empty = document.createElement("div");
+    empty.className = "hint";
+    empty.textContent = "No students added yet. Add names on the left, then drag here.";
+    studentRack.appendChild(empty);
   }
+}
 
-  $("addStudent").addEventListener("click", () => {
-    const name = ($("studentName").value || "").trim();
-    if(!name) return;
-    state.students.push(name);
-    $("studentName").value = "";
-    renderStudentRack();
+function axisClientToT(clientX){
+  const r = axis.getBoundingClientRect();
+  return clamp((clientX - r.left) / r.width, 0, 1);
+}
+
+["dragenter","dragover"].forEach(evt => {
+  axis.addEventListener(evt, (e) => e.preventDefault());
+});
+
+axis.addEventListener("drop", (e) => {
+  e.preventDefault();
+  let payload;
+  try{ payload = JSON.parse(e.dataTransfer.getData("text/plain") || "{}"); }
+  catch{ payload = null; }
+
+  if(!payload || payload.type !== "student") return;
+
+  const t = axisClientToT(e.clientX);
+  state.placedStudents.push({ id: uid("stu"), name: payload.name, t });
+  renderPlacedStudents();
+});
+
+function renderPlacedStudents(){
+  axis.querySelectorAll(".student").forEach(n => n.remove());
+  axis.style.position = "relative";
+
+  state.placedStudents.forEach((s) => {
+    const el = document.createElement("div");
+    el.className = "student";
+    el.dataset.id = s.id;
+    el.innerHTML = `
+      <span>${escapeHtml(s.name)}</span>
+      <span class="x" title="Remove">×</span>
+    `;
+
+    const px = s.t * axis.clientWidth;
+    const py = axis.clientHeight * 0.20;
+    el.style.left = (px - 10) + "px";
+    el.style.top  = py + "px";
+
+    el.querySelector(".x").addEventListener("click", (e) => {
+      e.stopPropagation();
+      state.placedStudents = state.placedStudents.filter(x => x.id !== s.id);
+      renderPlacedStudents();
+    });
+
+    makeDraggable(el, {
+      onMove: (clientX) => {
+        s.t = axisClientToT(clientX);
+        const newX = s.t * axis.clientWidth;
+        el.style.left = (newX - 10) + "px";
+      }
+    });
+
+    axis.appendChild(el);
   });
-  $("studentName").addEventListener("keydown", (e) => {
-    if(e.key === "Enter") $("addStudent").click();
-  });
+}
 
-  $("resetFormation").addEventListener("click", () => {
-    state.placedStudents = [];
-    renderPlacedStudents();
-  });
+$("addStudent").addEventListener("click", () => {
+  const name = ($("studentName").value || "").trim();
+  if(!name) return;
+  state.students.push(name);
+  $("studentName").value = "";
+  renderStudentRack();
+});
+$("studentName").addEventListener("keydown", (e) => {
+  if(e.key === "Enter") $("addStudent").click();
+});
 
-  /***********************
-   * Collapsible Term Panel
-   ***********************/
-  $("collapseTerms").addEventListener("click", () => {
-    termsPanel.classList.toggle("collapsed");
-    $("collapseTerms").textContent = termsPanel.classList.contains("collapsed") ? "Expand" : "Collapse";
-  });
+$("resetFormation").addEventListener("click", () => {
+  state.placedStudents = [];
+  renderPlacedStudents();
+});
 
-  $("toggleTerms").addEventListener("click", () => {
-    termsPanel.style.display = (termsPanel.style.display === "none") ? "block" : "none";
-  });
+/***********************
+ * Collapsible Term Panel
+ ***********************/
+$("collapseTerms").addEventListener("click", () => {
+  termsPanel.classList.toggle("collapsed");
+  $("collapseTerms").textContent = termsPanel.classList.contains("collapsed") ? "Expand" : "Collapse";
+});
+$("toggleTerms").addEventListener("click", () => {
+  termsPanel.style.display = (termsPanel.style.display === "none") ? "block" : "none";
+});
 
-  /***********************
-   * Persistence: Save/Load + JSON import/export
-   ***********************/
-  const STORAGE_KEY = "choreo_mode_state_v1";
+/***********************
+ * Persistence
+ ***********************/
+const STORAGE_KEY = "choreo_mode_state_v1";
 
-  function serializableState(){
-    // NOTE: we don't store actual PDF binary here (keeping it simple).
-    // Save stores: overlays + formations + banks.
-    // PDF must be re-uploaded, then Load applies overlays/formations.
-    return {
-      version: 1,
-      savedAt: new Date().toISOString(),
-      overlaysByPage: state.overlaysByPage,
-      placedStudents: state.placedStudents,
-      students: state.students,
-      terms: state.terms
-    };
+function serializableState(){
+  return {
+    version: 1,
+    savedAt: new Date().toISOString(),
+    overlaysByPage: state.overlaysByPage,
+    placedStudents: state.placedStudents,
+    students: state.students,
+    terms: state.terms
+  };
+}
+
+function applySavedState(obj){
+  if(!obj || typeof obj !== "object") return;
+  state.overlaysByPage = obj.overlaysByPage || {};
+  state.placedStudents = obj.placedStudents || [];
+  state.students = obj.students || [];
+  state.terms = obj.terms || [...DEFAULT_TERMS];
+
+  renderTermBank();
+  renderOverlays();
+  renderStudentRack();
+  renderPlacedStudents();
+  setStatus("State loaded (PDF not included—re-upload if needed).");
+}
+
+$("saveBtn").addEventListener("click", () => {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(serializableState()));
+  setStatus("Saved to browser.");
+});
+
+$("loadBtn").addEventListener("click", () => {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if(!raw){
+    alert("No saved state found in this browser.");
+    return;
   }
+  try{ applySavedState(JSON.parse(raw)); }
+  catch{ alert("Saved data was corrupted."); }
+});
 
-  function applySavedState(obj){
-    if(!obj || typeof obj !== "object") return;
-    state.overlaysByPage = obj.overlaysByPage || {};
-    state.placedStudents = obj.placedStudents || [];
-    state.students = obj.students || [];
-    state.terms = obj.terms || [...DEFAULT_TERMS];
+$("exportBtn").addEventListener("click", () => {
+  const blob = new Blob([JSON.stringify(serializableState(), null, 2)], { type:"application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "choreo-mode.json";
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
 
-    renderTermBank();
-    renderOverlays();
-    renderStudentRack();
-    renderPlacedStudents();
-    setStatus("State loaded (PDF not included—re-upload if needed).");
+$("importBtn").addEventListener("click", () => hiddenImport.click());
+
+hiddenImport.addEventListener("change", async () => {
+  const file = hiddenImport.files?.[0];
+  if(!file) return;
+  try{
+    const obj = JSON.parse(await file.text());
+    applySavedState(obj);
+  }catch{
+    alert("Could not import JSON.");
+  } finally {
+    hiddenImport.value = "";
   }
+});
 
-  $("saveBtn").addEventListener("click", () => {
-    const data = serializableState();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    setStatus("Saved to browser.");
-  });
+$("clearBtn").addEventListener("click", () => {
+  const ok = confirm("Clear overlays + formations + banks? (This does not delete your PDF file.)");
+  if(!ok) return;
+  state.overlaysByPage = {};
+  state.placedStudents = [];
+  state.students = [];
+  state.terms = [...DEFAULT_TERMS];
+  renderTermBank();
+  renderOverlays();
+  renderStudentRack();
+  renderPlacedStudents();
+  setStatus("Cleared.");
+});
 
-  $("loadBtn").addEventListener("click", () => {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if(!raw){
-      alert("No saved state found in this browser.");
-      return;
-    }
-    try{
-      applySavedState(JSON.parse(raw));
-    }catch{
-      alert("Saved data was corrupted.");
-    }
-  });
+/***********************
+ * Resize + init
+ ***********************/
+window.addEventListener("resize", () => {
+  renderOverlays();
+  renderPlacedStudents();
+});
 
-  $("exportBtn").addEventListener("click", () => {
-    const data = serializableState();
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type:"application/json" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "choreo-mode.json";
-    a.click();
-    URL.revokeObjectURL(a.href);
-  });
-
-  $("importBtn").addEventListener("click", () => hiddenImport.click());
-
-  hiddenImport.addEventListener("change", async () => {
-    const file = hiddenImport.files?.[0];
-    if(!file) return;
-    try{
-      const text = await file.text();
-      const obj = JSON.parse(text);
-      applySavedState(obj);
-    }catch{
-      alert("Could not import JSON.");
-    } finally {
-      hiddenImport.value = "";
-    }
-  });
-
-  $("clearBtn").addEventListener("click", () => {
-    const ok = confirm("Clear overlays + formations + banks? (This does not delete your PDF file.)");
-    if(!ok) return;
-    state.overlaysByPage = {};
-    state.placedStudents = [];
-    state.students = [];
-    state.terms = [...DEFAULT_TERMS];
-    renderTermBank();
-    renderOverlays();
-    renderStudentRack();
-    renderPlacedStudents();
-    setStatus("Cleared.");
-  });
-
-  /***********************
-   * Keep overlays aligned on resize
-   ***********************/
-  window.addEventListener("resize", () => {
-    // Just re-render overlays and students positions based on current canvas size
-    renderOverlays();
-    renderPlacedStudents();
-  });
-
-  /***********************
-   * Init
-   ***********************/
-  function init(){
-    renderTermBank();
-    renderStudentRack();
-    renderAxisTicks();
-    updateZoomLabel();
-    setStatus("Ready. Upload a PDF.");
-  }
-  init();
+function init(){
+  renderTermBank();
+  renderStudentRack();
+  renderAxisTicks();
+  updateZoomLabel();
+  setStatus("Ready. Upload a PDF.");
+}
+init();
 </script>
+
 </body>
 </html>
