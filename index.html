@@ -1,0 +1,1232 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Choreography Mode (PDF + Terms + Formations)</title>
+
+  <!-- PDF.js (CDN) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.js"></script>
+
+  <style>
+    :root{
+      --bg:#0b1020;
+      --panel:#121a33;
+      --panel2:#0f1730;
+      --text:#e7ecff;
+      --muted:#aeb7e6;
+      --line:#2a3564;
+      --accent:#7aa2ff;
+      --accent2:#78f0c8;
+      --danger:#ff6b7a;
+      --shadow: 0 12px 30px rgba(0,0,0,.35);
+      --radius: 14px;
+      --gap: 12px;
+      --font: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+    }
+    *{ box-sizing:border-box; }
+    body{
+      margin:0;
+      font-family:var(--font);
+      background: radial-gradient(1200px 600px at 20% -10%, rgba(122,162,255,.25), transparent 60%),
+                  radial-gradient(900px 500px at 100% 0%, rgba(120,240,200,.18), transparent 55%),
+                  var(--bg);
+      color:var(--text);
+    }
+
+    header{
+      padding: 14px 16px;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      backdrop-filter: blur(10px);
+      background: rgba(11,16,32,.72);
+      border-bottom: 1px solid rgba(255,255,255,.06);
+    }
+    header .row{
+      display:flex;
+      gap:12px;
+      flex-wrap:wrap;
+      align-items:center;
+      justify-content:space-between;
+    }
+    .brand{
+      display:flex;
+      gap:10px;
+      align-items:center;
+      font-weight:700;
+      letter-spacing:.2px;
+    }
+    .dot{
+      width:12px;height:12px;border-radius:999px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      box-shadow: 0 0 18px rgba(122,162,255,.35);
+    }
+
+    .toolbar{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      align-items:center;
+      justify-content:flex-end;
+    }
+    button, input, select, textarea{
+      font: inherit;
+    }
+    .btn{
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(18,26,51,.85);
+      color: var(--text);
+      cursor:pointer;
+      transition:.15s transform ease, .15s background ease;
+      box-shadow: 0 10px 25px rgba(0,0,0,.18);
+      user-select:none;
+      display:inline-flex;
+      gap:8px;
+      align-items:center;
+    }
+    .btn:hover{ transform: translateY(-1px); background: rgba(18,26,51,1); }
+    .btn:active{ transform: translateY(0); }
+    .btn.primary{
+      background: linear-gradient(135deg, rgba(122,162,255,.95), rgba(120,240,200,.75));
+      border-color: rgba(255,255,255,.18);
+      color:#071028;
+      font-weight:700;
+    }
+    .btn.danger{
+      background: rgba(255,107,122,.16);
+      border-color: rgba(255,107,122,.35);
+    }
+    .btn.ghost{
+      background: rgba(255,255,255,.06);
+      border-color: rgba(255,255,255,.10);
+      box-shadow:none;
+    }
+    .file{
+      display:inline-flex;
+      align-items:center;
+      gap:10px;
+      padding: 8px 10px;
+      border-radius: 12px;
+      background: rgba(18,26,51,.65);
+      border: 1px solid rgba(255,255,255,.08);
+    }
+    .file input[type="file"]{ color: var(--muted); }
+
+    main{
+      padding: 16px;
+    }
+
+    .layout{
+      display:grid;
+      grid-template-columns: 320px 1fr;
+      gap: var(--gap);
+      align-items:start;
+    }
+
+    @media (max-width: 980px){
+      .layout{ grid-template-columns: 1fr; }
+    }
+
+    .panel{
+      background: rgba(18,26,51,.82);
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow:hidden;
+    }
+    .panel-header{
+      padding: 12px 12px;
+      border-bottom: 1px solid rgba(255,255,255,.06);
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      background: rgba(15,23,48,.55);
+    }
+    .panel-header h2{
+      margin:0;
+      font-size: 14px;
+      letter-spacing:.2px;
+      color: var(--text);
+    }
+    .panel-body{ padding: 12px; }
+
+    .hint{
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    /* PDF area */
+    .pdfWrap{
+      position:relative;
+      width:100%;
+      min-height: 70vh;
+      background: rgba(15,23,48,.55);
+      border: 1px solid rgba(255,255,255,.07);
+      border-radius: var(--radius);
+      overflow:hidden;
+      box-shadow: var(--shadow);
+    }
+    .pdfTop{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      align-items:center;
+      justify-content:space-between;
+      padding: 12px;
+      border-bottom: 1px solid rgba(255,255,255,.06);
+      background: rgba(11,16,32,.35);
+      position: sticky;
+      top: 62px; /* below header */
+      z-index: 5;
+    }
+    @media (max-width: 600px){
+      .pdfTop{ top: 102px; }
+    }
+
+    .pdfStage{
+      position:relative;
+      width:100%;
+      overflow:auto;
+      height: calc(70vh - 56px);
+      padding: 14px;
+    }
+    .pdfInner{
+      position:relative;
+      display:inline-block;
+      border-radius: 12px;
+      overflow:hidden;
+      border: 1px solid rgba(255,255,255,.10);
+      background:#0a0f1f;
+    }
+    canvas{
+      display:block;
+      background:#fff;
+    }
+    .overlayLayer{
+      position:absolute;
+      top:0; left:0;
+      right:0; bottom:0;
+      pointer-events:none; /* individual items re-enable */
+    }
+
+    /* Overlay items (terms) */
+    .termOverlay{
+      position:absolute;
+      pointer-events:auto;
+      cursor: grab;
+      user-select:none;
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: rgba(122,162,255,.20);
+      border: 1px solid rgba(122,162,255,.40);
+      color: var(--text);
+      font-size: 13px;
+      box-shadow: 0 10px 25px rgba(0,0,0,.25);
+      display:flex;
+      gap:8px;
+      align-items:center;
+      backdrop-filter: blur(8px);
+    }
+    .termOverlay:active{ cursor: grabbing; }
+    .termOverlay .x{
+      width:18px;height:18px;border-radius:999px;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      background: rgba(255,255,255,.12);
+      border: 1px solid rgba(255,255,255,.16);
+      font-size: 12px;
+      line-height: 1;
+      cursor:pointer;
+    }
+
+    /* Term bank */
+    .termList{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      margin-top:10px;
+    }
+    .pill{
+      padding: 8px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(255,255,255,.06);
+      color: var(--text);
+      font-size: 13px;
+      cursor: grab;
+      user-select:none;
+    }
+    .pill:active{ cursor: grabbing; }
+
+    .row2{
+      display:flex;
+      gap:10px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+    .field{
+      width:100%;
+      padding: 10px 11px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(255,255,255,.05);
+      color: var(--text);
+      outline:none;
+    }
+    .field::placeholder{ color: rgba(231,236,255,.55); }
+
+    /* Formations (closable window) */
+    .floating{
+      position:fixed;
+      right: 18px;
+      bottom: 18px;
+      width: 420px;
+      max-width: calc(100vw - 24px);
+      z-index: 80;
+      display:none; /* toggled */
+    }
+    .floating .panel{ box-shadow: 0 18px 60px rgba(0,0,0,.5); }
+    .stage{
+      background: rgba(11,16,32,.35);
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 12px;
+      padding: 12px;
+    }
+    .axis{
+      position:relative;
+      height: 92px;
+      border-radius: 12px;
+      background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+      border: 1px solid rgba(255,255,255,.07);
+      overflow:hidden;
+    }
+    .axisLine{
+      position:absolute;
+      left: 14px;
+      right: 14px;
+      top: 50%;
+      height: 2px;
+      background: rgba(255,255,255,.18);
+    }
+    .tick{
+      position:absolute;
+      top: calc(50% - 8px);
+      width: 1px;
+      height: 16px;
+      background: rgba(255,255,255,.22);
+    }
+    .tickLabel{
+      position:absolute;
+      top: calc(50% + 10px);
+      transform: translateX(-50%);
+      font-size: 11px;
+      color: rgba(231,236,255,.72);
+      white-space:nowrap;
+    }
+    .centerLine{
+      position:absolute;
+      top: 10px;
+      bottom: 10px;
+      left: 50%;
+      width: 2px;
+      background: rgba(120,240,200,.45);
+      box-shadow: 0 0 18px rgba(120,240,200,.25);
+    }
+
+    .studentRack{
+      display:flex;
+      flex-wrap:wrap;
+      gap: 8px;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(255,255,255,.06);
+    }
+    .student{
+      position:absolute;
+      pointer-events:auto;
+      cursor: grab;
+      user-select:none;
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: rgba(120,240,200,.16);
+      border: 1px solid rgba(120,240,200,.35);
+      color: var(--text);
+      font-size: 13px;
+      box-shadow: 0 10px 25px rgba(0,0,0,.25);
+      display:flex;
+      gap:8px;
+      align-items:center;
+      backdrop-filter: blur(8px);
+    }
+    .student:active{ cursor: grabbing; }
+    .student .x{
+      width:18px;height:18px;border-radius:999px;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      background: rgba(255,255,255,.12);
+      border: 1px solid rgba(255,255,255,.16);
+      font-size: 12px;
+      line-height: 1;
+      cursor:pointer;
+    }
+    .rackPill{
+      padding: 8px 10px;
+      border-radius: 999px;
+      border: 1px dashed rgba(255,255,255,.18);
+      background: rgba(255,255,255,.05);
+      font-size: 13px;
+      cursor: grab;
+      user-select:none;
+    }
+
+    /* collapsed panel body */
+    .collapsed .panel-body{ display:none; }
+
+    /* small text */
+    .mono{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 12px;
+      color: rgba(231,236,255,.75);
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.08);
+      padding: 6px 8px;
+      border-radius: 10px;
+    }
+
+    /* drag hover */
+    .dropHint{
+      outline: 2px dashed rgba(122,162,255,.5);
+      outline-offset: -6px;
+    }
+  </style>
+</head>
+
+<body>
+<header>
+  <div class="row">
+    <div class="brand">
+      <span class="dot"></span>
+      <span>Choreography Mode</span>
+      <span class="mono" id="status">No PDF loaded</span>
+    </div>
+
+    <div class="toolbar">
+      <label class="file">
+        <span class="hint">Upload PDF</span>
+        <input id="pdfFile" type="file" accept="application/pdf" />
+      </label>
+
+      <button class="btn" id="toggleTerms">Toggle Term Bank</button>
+      <button class="btn" id="toggleFormations">Formations</button>
+
+      <button class="btn primary" id="saveBtn">Save</button>
+      <button class="btn" id="loadBtn">Load</button>
+      <button class="btn" id="exportBtn">Export JSON</button>
+      <button class="btn" id="importBtn">Import JSON</button>
+      <button class="btn danger" id="clearBtn">Clear All</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="layout">
+    <!-- Left controls -->
+    <section>
+      <div class="panel" id="termsPanel">
+        <div class="panel-header">
+          <h2>Choreography Term Bank (drag onto the PDF)</h2>
+          <div class="row2">
+            <button class="btn ghost" id="collapseTerms">Collapse</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="hint">
+            Drag a term onto the PDF page. Then you can drag the label around on top of the music.
+            Click <b>×</b> to delete a label.
+          </div>
+
+          <div style="height:10px"></div>
+
+          <div class="row2">
+            <input class="field" id="newTerm" placeholder="Add a new term (e.g., 'Grapevine', 'Step-touch', 'Pivot')" />
+            <button class="btn" id="addTerm">Add</button>
+          </div>
+
+          <div class="termList" id="termList"></div>
+
+          <div style="height:12px"></div>
+          <div class="hint">
+            Tip: You can make categories later (Turns / Levels / Travel / Jumps).
+            For now this is a simple bank you can grow.
+          </div>
+        </div>
+      </div>
+
+      <div style="height: var(--gap)"></div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <h2>PDF Controls</h2>
+        </div>
+        <div class="panel-body">
+          <div class="row2">
+            <button class="btn" id="prevPage">◀ Prev</button>
+            <button class="btn" id="nextPage">Next ▶</button>
+            <span class="mono">Page <span id="pageNum">—</span> / <span id="pageCount">—</span></span>
+          </div>
+
+          <div style="height:10px"></div>
+
+          <div class="row2">
+            <button class="btn" id="zoomOut">−</button>
+            <button class="btn" id="zoomIn">+</button>
+            <span class="mono">Zoom <span id="zoomLabel">100%</span></span>
+          </div>
+
+          <div style="height:12px"></div>
+
+          <div class="hint">
+            Overlays are stored per-page. Switch pages to place terms per section.
+          </div>
+        </div>
+      </div>
+
+      <div style="height: var(--gap)"></div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Formations Quick Add</h2>
+        </div>
+        <div class="panel-body">
+          <div class="hint">Add student names, then drag them from the rack into the formation stage.</div>
+          <div style="height:10px"></div>
+
+          <div class="row2">
+            <input class="field" id="studentName" placeholder="Student name (e.g., 'Aly', 'Ben', 'T1', 'B2')" />
+            <button class="btn" id="addStudent">Add Student</button>
+          </div>
+
+          <div style="height:12px"></div>
+          <div class="hint">
+            The formations window is the floating panel (bottom-right). Toggle it with <b>Formations</b>.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PDF Viewer -->
+    <section class="pdfWrap" id="pdfWrap">
+      <div class="pdfTop">
+        <div class="row2">
+          <span class="mono" id="pdfName">No PDF</span>
+          <span class="hint" id="dropHelp">Drop terms onto the page</span>
+        </div>
+        <div class="row2">
+          <button class="btn ghost" id="fitWidth">Fit Width</button>
+          <button class="btn ghost" id="fitPage">Fit Page</button>
+        </div>
+      </div>
+
+      <div class="pdfStage" id="pdfStage">
+        <div class="pdfInner" id="pdfInner">
+          <canvas id="pdfCanvas"></canvas>
+          <div class="overlayLayer" id="overlayLayer"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<!-- Floating formations panel -->
+<div class="floating" id="formationsWindow">
+  <div class="panel">
+    <div class="panel-header">
+      <h2>Formations (drag students onto the number line)</h2>
+      <div class="row2">
+        <button class="btn ghost" id="resetFormation">Reset</button>
+        <button class="btn danger" id="closeFormations">Close</button>
+      </div>
+    </div>
+
+    <div class="panel-body">
+      <div class="hint">
+        Number line spans <b>20L</b> to <b>20R</b> with <b>0</b> at center.
+        Drag student tokens along the line. Click <b>×</b> to remove a token.
+      </div>
+
+      <div style="height:10px"></div>
+
+      <div class="stage">
+        <div class="axis" id="axis">
+          <div class="axisLine"></div>
+          <div class="centerLine" title="0 (Center)"></div>
+          <!-- ticks injected by JS -->
+        </div>
+
+        <div class="studentRack" id="studentRack">
+          <!-- student rack pills injected by JS -->
+        </div>
+      </div>
+
+      <div style="height:10px"></div>
+      <div class="hint">
+        Students in the rack are draggable “sources.” Students placed on the line become tokens (saved).
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Import/Export modal (simple prompt/confirm replacements) -->
+<input id="hiddenImport" type="file" accept="application/json" style="display:none;" />
+
+<script>
+  /***********************
+   * Basic state
+   ***********************/
+  const DEFAULT_TERMS = [
+    "Step-touch", "Grapevine", "Pivot", "Jazz square", "Kick-ball-change",
+    "Ripple", "Canon", "Freeze", "Level change", "Diagonal travel"
+  ];
+
+  const state = {
+    pdf: null,
+    pdfName: null,
+    pageNum: 1,
+    pageCount: 0,
+    zoom: 1.0,
+
+    // overlaysByPage: { [pageNum]: [{id,text,x,y}] } x/y are normalized 0..1 relative to rendered page
+    overlaysByPage: {},
+
+    // formations: tokens placed on axis
+    // placedStudents: [{id,name, t}] where t is 0..1 along axis (0=20L, .5=center, 1=20R)
+    placedStudents: [],
+    // student bank (names)
+    students: [],
+
+    // term bank
+    terms: [...DEFAULT_TERMS]
+  };
+
+  const $ = (id) => document.getElementById(id);
+
+  const pdfFile = $("pdfFile");
+  const statusEl = $("status");
+  const pdfNameEl = $("pdfName");
+  const pageNumEl = $("pageNum");
+  const pageCountEl = $("pageCount");
+  const zoomLabel = $("zoomLabel");
+
+  const pdfCanvas = $("pdfCanvas");
+  const overlayLayer = $("overlayLayer");
+  const pdfInner = $("pdfInner");
+  const pdfStage = $("pdfStage");
+  const pdfWrap = $("pdfWrap");
+
+  const termList = $("termList");
+  const newTerm = $("newTerm");
+
+  const termsPanel = $("termsPanel");
+  const formationsWindow = $("formationsWindow");
+  const axis = $("axis");
+  const studentRack = $("studentRack");
+
+  const hiddenImport = $("hiddenImport");
+
+  /***********************
+   * Helpers
+   ***********************/
+  function uid(prefix="id"){
+    return prefix + "_" + Math.random().toString(16).slice(2) + Date.now().toString(16);
+  }
+
+  function clamp(n, min, max){ return Math.max(min, Math.min(max, n)); }
+
+  function setStatus(text){ statusEl.textContent = text; }
+
+  function currentPageOverlays(){
+    const p = String(state.pageNum);
+    if(!state.overlaysByPage[p]) state.overlaysByPage[p] = [];
+    return state.overlaysByPage[p];
+  }
+
+  function getCanvasRect(){
+    return pdfCanvas.getBoundingClientRect();
+  }
+
+  function getInnerRect(){
+    return pdfInner.getBoundingClientRect();
+  }
+
+  function normalizedFromClientXY(clientX, clientY){
+    // normalize relative to pdfCanvas area
+    const r = getCanvasRect();
+    const x = (clientX - r.left) / r.width;
+    const y = (clientY - r.top) / r.height;
+    return { x: clamp(x, 0, 1), y: clamp(y, 0, 1) };
+  }
+
+  function clientFromNormalized(x, y){
+    // position within overlayLayer (same size as canvas)
+    return {
+      left: (x * pdfCanvas.width) + "px",
+      top: (y * pdfCanvas.height) + "px"
+    };
+  }
+
+  function updateZoomLabel(){
+    zoomLabel.textContent = Math.round(state.zoom * 100) + "%";
+  }
+
+  /***********************
+   * Term bank rendering
+   ***********************/
+  function renderTermBank(){
+    termList.innerHTML = "";
+    state.terms.forEach((t) => {
+      const pill = document.createElement("div");
+      pill.className = "pill";
+      pill.draggable = true;
+      pill.textContent = t;
+
+      pill.addEventListener("dragstart", (e) => {
+        e.dataTransfer.setData("text/plain", JSON.stringify({ type:"term", text:t }));
+      });
+
+      termList.appendChild(pill);
+    });
+  }
+
+  $("addTerm").addEventListener("click", () => {
+    const val = (newTerm.value || "").trim();
+    if(!val) return;
+    state.terms.push(val);
+    newTerm.value = "";
+    renderTermBank();
+  });
+
+  newTerm.addEventListener("keydown", (e) => {
+    if(e.key === "Enter") $("addTerm").click();
+  });
+
+  /***********************
+   * Overlay rendering (terms on PDF)
+   ***********************/
+  function renderOverlays(){
+    overlayLayer.innerHTML = "";
+    const overlays = currentPageOverlays();
+
+    overlays.forEach((o) => {
+      const el = document.createElement("div");
+      el.className = "termOverlay";
+      el.dataset.id = o.id;
+      el.innerHTML = `
+        <span>${escapeHtml(o.text)}</span>
+        <span class="x" title="Delete">×</span>
+      `;
+
+      // position
+      el.style.left = (o.x * pdfCanvas.width) + "px";
+      el.style.top  = (o.y * pdfCanvas.height) + "px";
+
+      // delete
+      el.querySelector(".x").addEventListener("click", (e) => {
+        e.stopPropagation();
+        const idx = overlays.findIndex(x => x.id === o.id);
+        if(idx >= 0) overlays.splice(idx, 1);
+        renderOverlays();
+      });
+
+      // drag move (pointer)
+      makeDraggable(el, {
+        onMove: (clientX, clientY) => {
+          const n = normalizedFromClientXY(clientX, clientY);
+          o.x = n.x; o.y = n.y;
+          el.style.left = (o.x * pdfCanvas.width) + "px";
+          el.style.top  = (o.y * pdfCanvas.height) + "px";
+        }
+      });
+
+      overlayLayer.appendChild(el);
+    });
+  }
+
+  function escapeHtml(s){
+    return String(s)
+      .replaceAll("&","&amp;")
+      .replaceAll("<","&lt;")
+      .replaceAll(">","&gt;")
+      .replaceAll('"',"&quot;")
+      .replaceAll("'","&#039;");
+  }
+
+  /***********************
+   * PDF.js rendering
+   ***********************/
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.js";
+
+  async function loadPdfFromFile(file){
+    const buf = await file.arrayBuffer();
+    state.pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    state.pdfName = file.name;
+    state.pageCount = state.pdf.numPages;
+    state.pageNum = 1;
+    state.zoom = 1.0;
+    state.overlaysByPage = {}; // new doc starts empty
+
+    pdfNameEl.textContent = file.name;
+    pageCountEl.textContent = String(state.pageCount);
+    setStatus("Loaded: " + file.name);
+    updateZoomLabel();
+
+    await renderPage();
+  }
+
+  async function renderPage(){
+    if(!state.pdf) return;
+
+    const page = await state.pdf.getPage(state.pageNum);
+    const viewport = page.getViewport({ scale: state.zoom });
+
+    const ctx = pdfCanvas.getContext("2d");
+    pdfCanvas.width = Math.floor(viewport.width);
+    pdfCanvas.height = Math.floor(viewport.height);
+
+    // Keep overlay layer sized to canvas
+    overlayLayer.style.width = pdfCanvas.width + "px";
+    overlayLayer.style.height = pdfCanvas.height + "px";
+
+    // Resize pdfInner to wrap canvas
+    pdfInner.style.width = pdfCanvas.width + "px";
+    pdfInner.style.height = pdfCanvas.height + "px";
+
+    // Render
+    await page.render({ canvasContext: ctx, viewport }).promise;
+
+    // Update UI
+    pageNumEl.textContent = String(state.pageNum);
+
+    // Repaint overlays at new size
+    renderOverlays();
+  }
+
+  pdfFile.addEventListener("change", async () => {
+    const file = pdfFile.files?.[0];
+    if(!file) return;
+    if(file.type !== "application/pdf"){
+      alert("Please choose a PDF file.");
+      return;
+    }
+    await loadPdfFromFile(file);
+  });
+
+  $("prevPage").addEventListener("click", async () => {
+    if(!state.pdf) return;
+    state.pageNum = Math.max(1, state.pageNum - 1);
+    await renderPage();
+  });
+  $("nextPage").addEventListener("click", async () => {
+    if(!state.pdf) return;
+    state.pageNum = Math.min(state.pageCount, state.pageNum + 1);
+    await renderPage();
+  });
+
+  $("zoomIn").addEventListener("click", async () => {
+    if(!state.pdf) return;
+    state.zoom = clamp(state.zoom + 0.1, 0.3, 3.0);
+    updateZoomLabel();
+    await renderPage();
+  });
+  $("zoomOut").addEventListener("click", async () => {
+    if(!state.pdf) return;
+    state.zoom = clamp(state.zoom - 0.1, 0.3, 3.0);
+    updateZoomLabel();
+    await renderPage();
+  });
+
+  $("fitWidth").addEventListener("click", async () => {
+    if(!state.pdf) return;
+    const page = await state.pdf.getPage(state.pageNum);
+    const unscaled = page.getViewport({ scale: 1.0 });
+    // Fit inside pdfStage width (minus padding & borders)
+    const available = pdfStage.clientWidth - 28; // stage padding ~14*2
+    state.zoom = clamp(available / unscaled.width, 0.3, 3.0);
+    updateZoomLabel();
+    await renderPage();
+  });
+
+  $("fitPage").addEventListener("click", async () => {
+    if(!state.pdf) return;
+    const page = await state.pdf.getPage(state.pageNum);
+    const unscaled = page.getViewport({ scale: 1.0 });
+    const availableW = pdfStage.clientWidth - 28;
+    const availableH = pdfStage.clientHeight - 28;
+    const scale = Math.min(availableW / unscaled.width, availableH / unscaled.height);
+    state.zoom = clamp(scale, 0.3, 3.0);
+    updateZoomLabel();
+    await renderPage();
+  });
+
+  /***********************
+   * Drag-drop terms onto PDF
+   ***********************/
+  function setDropHint(on){
+    pdfWrap.classList.toggle("dropHint", !!on);
+  }
+
+  ["dragenter","dragover"].forEach(evt => {
+    pdfWrap.addEventListener(evt, (e) => {
+      if(!state.pdf) return;
+      e.preventDefault();
+      setDropHint(true);
+    });
+  });
+  ["dragleave","drop"].forEach(evt => {
+    pdfWrap.addEventListener(evt, (e) => {
+      setDropHint(false);
+    });
+  });
+
+  pdfWrap.addEventListener("drop", (e) => {
+    if(!state.pdf) return;
+    e.preventDefault();
+
+    let payload;
+    try{
+      payload = JSON.parse(e.dataTransfer.getData("text/plain") || "{}");
+    }catch{
+      payload = null;
+    }
+    if(!payload || payload.type !== "term") return;
+
+    const n = normalizedFromClientXY(e.clientX, e.clientY);
+    const overlays = currentPageOverlays();
+    overlays.push({ id: uid("term"), text: payload.text, x: n.x, y: n.y });
+    renderOverlays();
+  });
+
+  /***********************
+   * Pointer-based draggable utility
+   ***********************/
+  function makeDraggable(el, { onMove, onDown, onUp } = {}){
+    let dragging = false;
+
+    const down = (e) => {
+      // ignore clicks on delete buttons
+      if(e.target?.classList?.contains("x")) return;
+
+      dragging = true;
+      el.setPointerCapture?.(e.pointerId);
+      onDown?.(e.clientX, e.clientY);
+      e.preventDefault();
+    };
+    const move = (e) => {
+      if(!dragging) return;
+      onMove?.(e.clientX, e.clientY);
+      e.preventDefault();
+    };
+    const up = (e) => {
+      if(!dragging) return;
+      dragging = false;
+      onUp?.(e.clientX, e.clientY);
+      e.preventDefault();
+    };
+
+    el.addEventListener("pointerdown", down);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
+  /***********************
+   * Formations window / axis
+   ***********************/
+  function openFormations(){
+    formationsWindow.style.display = "block";
+    renderAxisTicks();
+    renderStudentRack();
+    renderPlacedStudents();
+  }
+
+  function closeFormations(){
+    formationsWindow.style.display = "none";
+  }
+
+  $("toggleFormations").addEventListener("click", () => {
+    const showing = formationsWindow.style.display === "block";
+    showing ? closeFormations() : openFormations();
+  });
+  $("closeFormations").addEventListener("click", closeFormations);
+
+  function renderAxisTicks(){
+    // ticks at 20L, 15L, 10L, 5L, 0, 5R, 10R, 15R, 20R
+    // t: 0..1
+    axis.querySelectorAll(".tick,.tickLabel").forEach(n => n.remove());
+    const points = [
+      { label:"20L", t:0.00 },
+      { label:"15L", t:0.125 },
+      { label:"10L", t:0.25 },
+      { label:"5L",  t:0.375 },
+      { label:"0",   t:0.50 },
+      { label:"5R",  t:0.625 },
+      { label:"10R", t:0.75 },
+      { label:"15R", t:0.875 },
+      { label:"20R", t:1.00 }
+    ];
+    points.forEach(p => {
+      const tick = document.createElement("div");
+      tick.className = "tick";
+      tick.style.left = `calc(${p.t * 100}% )`;
+      axis.appendChild(tick);
+
+      const label = document.createElement("div");
+      label.className = "tickLabel";
+      label.style.left = `calc(${p.t * 100}% )`;
+      label.textContent = p.label;
+      axis.appendChild(label);
+    });
+  }
+
+  function renderStudentRack(){
+    studentRack.innerHTML = "";
+    state.students.forEach(name => {
+      const pill = document.createElement("div");
+      pill.className = "rackPill";
+      pill.textContent = name;
+      pill.draggable = true;
+
+      pill.addEventListener("dragstart", (e) => {
+        e.dataTransfer.setData("text/plain", JSON.stringify({ type:"student", name }));
+      });
+
+      studentRack.appendChild(pill);
+    });
+
+    if(state.students.length === 0){
+      const empty = document.createElement("div");
+      empty.className = "hint";
+      empty.textContent = "No students added yet. Add names on the left, then drag here.";
+      studentRack.appendChild(empty);
+    }
+  }
+
+  function axisClientToT(clientX){
+    const r = axis.getBoundingClientRect();
+    const x = clamp((clientX - r.left) / r.width, 0, 1);
+    return x;
+  }
+
+  // Allow dropping students onto axis
+  ["dragenter","dragover"].forEach(evt => {
+    axis.addEventListener(evt, (e) => {
+      e.preventDefault();
+    });
+  });
+
+  axis.addEventListener("drop", (e) => {
+    e.preventDefault();
+    let payload;
+    try{
+      payload = JSON.parse(e.dataTransfer.getData("text/plain") || "{}");
+    }catch{ payload = null; }
+    if(!payload || payload.type !== "student") return;
+
+    const t = axisClientToT(e.clientX);
+    state.placedStudents.push({ id: uid("stu"), name: payload.name, t });
+    renderPlacedStudents();
+  });
+
+  function renderPlacedStudents(){
+    // remove old tokens
+    axis.querySelectorAll(".student").forEach(n => n.remove());
+
+    const r = axis.getBoundingClientRect();
+
+    state.placedStudents.forEach((s) => {
+      const el = document.createElement("div");
+      el.className = "student";
+      el.dataset.id = s.id;
+      el.innerHTML = `
+        <span>${escapeHtml(s.name)}</span>
+        <span class="x" title="Remove">×</span>
+      `;
+
+      // position within axis (absolute)
+      // axis is position:relative (in CSS by default it's not; so set here)
+      axis.style.position = "relative";
+
+      const px = s.t * axis.clientWidth;
+      const py = axis.clientHeight * 0.20; // a bit above the line
+      el.style.left = (px - 10) + "px";
+      el.style.top  = py + "px";
+
+      // delete
+      el.querySelector(".x").addEventListener("click", (e) => {
+        e.stopPropagation();
+        state.placedStudents = state.placedStudents.filter(x => x.id !== s.id);
+        renderPlacedStudents();
+      });
+
+      // drag along axis
+      makeDraggable(el, {
+        onMove: (clientX) => {
+          s.t = axisClientToT(clientX);
+          const newX = s.t * axis.clientWidth;
+          el.style.left = (newX - 10) + "px";
+        }
+      });
+
+      axis.appendChild(el);
+    });
+  }
+
+  $("addStudent").addEventListener("click", () => {
+    const name = ($("studentName").value || "").trim();
+    if(!name) return;
+    state.students.push(name);
+    $("studentName").value = "";
+    renderStudentRack();
+  });
+  $("studentName").addEventListener("keydown", (e) => {
+    if(e.key === "Enter") $("addStudent").click();
+  });
+
+  $("resetFormation").addEventListener("click", () => {
+    state.placedStudents = [];
+    renderPlacedStudents();
+  });
+
+  /***********************
+   * Collapsible Term Panel
+   ***********************/
+  $("collapseTerms").addEventListener("click", () => {
+    termsPanel.classList.toggle("collapsed");
+    $("collapseTerms").textContent = termsPanel.classList.contains("collapsed") ? "Expand" : "Collapse";
+  });
+
+  $("toggleTerms").addEventListener("click", () => {
+    termsPanel.style.display = (termsPanel.style.display === "none") ? "block" : "none";
+  });
+
+  /***********************
+   * Persistence: Save/Load + JSON import/export
+   ***********************/
+  const STORAGE_KEY = "choreo_mode_state_v1";
+
+  function serializableState(){
+    // NOTE: we don't store actual PDF binary here (keeping it simple).
+    // Save stores: overlays + formations + banks.
+    // PDF must be re-uploaded, then Load applies overlays/formations.
+    return {
+      version: 1,
+      savedAt: new Date().toISOString(),
+      overlaysByPage: state.overlaysByPage,
+      placedStudents: state.placedStudents,
+      students: state.students,
+      terms: state.terms
+    };
+  }
+
+  function applySavedState(obj){
+    if(!obj || typeof obj !== "object") return;
+    state.overlaysByPage = obj.overlaysByPage || {};
+    state.placedStudents = obj.placedStudents || [];
+    state.students = obj.students || [];
+    state.terms = obj.terms || [...DEFAULT_TERMS];
+
+    renderTermBank();
+    renderOverlays();
+    renderStudentRack();
+    renderPlacedStudents();
+    setStatus("State loaded (PDF not included—re-upload if needed).");
+  }
+
+  $("saveBtn").addEventListener("click", () => {
+    const data = serializableState();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    setStatus("Saved to browser.");
+  });
+
+  $("loadBtn").addEventListener("click", () => {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(!raw){
+      alert("No saved state found in this browser.");
+      return;
+    }
+    try{
+      applySavedState(JSON.parse(raw));
+    }catch{
+      alert("Saved data was corrupted.");
+    }
+  });
+
+  $("exportBtn").addEventListener("click", () => {
+    const data = serializableState();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type:"application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "choreo-mode.json";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+
+  $("importBtn").addEventListener("click", () => hiddenImport.click());
+
+  hiddenImport.addEventListener("change", async () => {
+    const file = hiddenImport.files?.[0];
+    if(!file) return;
+    try{
+      const text = await file.text();
+      const obj = JSON.parse(text);
+      applySavedState(obj);
+    }catch{
+      alert("Could not import JSON.");
+    } finally {
+      hiddenImport.value = "";
+    }
+  });
+
+  $("clearBtn").addEventListener("click", () => {
+    const ok = confirm("Clear overlays + formations + banks? (This does not delete your PDF file.)");
+    if(!ok) return;
+    state.overlaysByPage = {};
+    state.placedStudents = [];
+    state.students = [];
+    state.terms = [...DEFAULT_TERMS];
+    renderTermBank();
+    renderOverlays();
+    renderStudentRack();
+    renderPlacedStudents();
+    setStatus("Cleared.");
+  });
+
+  /***********************
+   * Keep overlays aligned on resize
+   ***********************/
+  window.addEventListener("resize", () => {
+    // Just re-render overlays and students positions based on current canvas size
+    renderOverlays();
+    renderPlacedStudents();
+  });
+
+  /***********************
+   * Init
+   ***********************/
+  function init(){
+    renderTermBank();
+    renderStudentRack();
+    renderAxisTicks();
+    updateZoomLabel();
+    setStatus("Ready. Upload a PDF.");
+  }
+  init();
+</script>
+</body>
+</html>
