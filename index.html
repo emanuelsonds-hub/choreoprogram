@@ -1012,8 +1012,6 @@ async function loadPdfFromDataUrl(dataUrl){
   pdfDoc = await loadingTask.promise;
   // ... rest of your function ...
 }
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.7.76/pdf.worker.min.js";
 
       const loadingTask = window.pdfjsLib.getDocument({ url: dataUrl });
       pdfDoc = await loadingTask.promise;
