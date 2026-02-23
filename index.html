@@ -2294,19 +2294,21 @@ window.pdfjsLib.GlobalWorkerOptions.workerSrc = "./assets/pdfjs/pdf.worker.min.j
       loadStudentNotes();
     
       // update layer chips
-      $("#layerChoreo").classList.toggle("active", state.ui.activeLayers.choreo);
-      $("#layerFormations").classList.toggle("active", state.ui.activeLayers.formation);
-      $("#layerComments").classList.toggle("active", state.ui.activeLayers.comment);
+      state.ui.activeLayers ??= { choreo: true, formation: true, comment: true };
 
-      $("#filterAll").classList.toggle("active", !state.ui.filterWithMarkers);
-      $("#filterWithMarkers").classList.toggle("active", state.ui.filterWithMarkers);
+      $("#layerChoreo")?.classList.toggle("active", !!state.ui.activeLayers.choreo);
+      $("#layerFormations")?.classList.toggle("active", !!state.ui.activeLayers.formation);
+      $("#layerComments")?.classList.toggle("active", !!state.ui.activeLayers.comment);
 
-      $("#togglePlaceBtn").textContent = `Place: ${state.ui.placing ? "On" : "Off"}`;
-      $("#toggleLoop").textContent = state.audio.loop.enabled ? "Loop On" : "Loop Off";
-      $("#loopPill").textContent = `A: ${state.audio.loop.a==null?"—":fmtTime(state.audio.loop.a)} | B: ${state.audio.loop.b==null?"—":fmtTime(state.audio.loop.b)}`;
-      $("#speedPill").textContent = `${state.audio.speed.toFixed(2)}×`;
-      $("#toggleRehearsalBtn").textContent = state.ui.rehearsalMode ? "Edit Mode" : "Rehearsal Mode";
-      $("#togglePdfBtn").textContent = state.ui.pdfCollapsed ? "Expand PDF" : "Collapse PDF";
+      $("#filterAll")?.classList.toggle("active", !state.ui.filterWithMarkers);
+      $("#filterWithMarkers")?.classList.toggle("active", !!state.ui.filterWithMarkers);
+
+      $("#togglePlaceBtn") && ($("#togglePlaceBtn").textContent = `Place: ${state.ui.placing ? "On" : "Off"}`);
+      $("#toggleLoop") && ($("#toggleLoop").textContent = state.audio.loop.enabled ? "Loop On" : "Loop Off");
+      $("#loopPill") && ($("#loopPill").textContent = `A: ${state.audio.loop.a==null?"—":fmtTime(state.audio.loop.a)} | B: ${state.audio.loop.b==null?"—":fmtTime(state.audio.loop.b)}`);
+      $("#speedPill") && ($("#speedPill").textContent = `${state.audio.speed.toFixed(2)}×`);
+      $("#toggleRehearsalBtn") && ($("#toggleRehearsalBtn").textContent = state.ui.rehearsalMode ? "Edit Mode" : "Rehearsal Mode");
+      $("#togglePdfBtn") && ($("#togglePdfBtn").textContent = state.ui.pdfCollapsed ? "Expand PDF" : "Collapse PDF");
 
       $("#stageGrid").classList.toggle("on", state.formation.grid);
       $("#toggleGrid").classList.toggle("active", state.formation.grid);
