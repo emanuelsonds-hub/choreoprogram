@@ -2692,12 +2692,12 @@ window.pdfjsLib.GlobalWorkerOptions.workerSrc = "./assets/pdfjs/pdf.worker.min.j
     // Wait for pdf.js to be ready (defer script)
     window.addEventListener("load", boot);
     
-document.getElementById('resetLayoutBtn').addEventListener('click', () => {
+document.getElementById('resetLayoutBtn')?.addEventListener('click', () => {
   state.ui.pdfCollapsed = false;
   state.ui.formationCollapsed = false;
   state.ui.thumbsCollapsed = false;
   state.ui.audioCollapsed = false;
-  };
+
   saveState();
   rebuildEverything();
 });
