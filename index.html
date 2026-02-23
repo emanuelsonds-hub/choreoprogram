@@ -995,10 +995,23 @@
     let pdfDoc = null;
     let renderTask = null;
 
-    async function loadPdfFromDataUrl(dataUrl){
-      if (!window.pdfjsLib){
-        throw new Error("PDF.js not ready yet.");
-      }
+    async function waitForPdfJs(){
+  return new Promise(resolve => {
+    const check = () => (window.pdfjsLib ? resolve() : setTimeout(check, 50));
+    check();
+  });
+}
+
+async function loadPdfFromDataUrl(dataUrl){
+  await waitForPdfJs();
+
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.7.76/pdf.worker.min.js";
+
+  const loadingTask = window.pdfjsLib.getDocument({ url: dataUrl });
+  pdfDoc = await loadingTask.promise;
+  // ... rest of your function ...
+}
       window.pdfjsLib.GlobalWorkerOptions.workerSrc =
         "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.7.76/pdf.worker.min.js";
 
