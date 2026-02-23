@@ -2264,6 +2264,18 @@ window.pdfjsLib.GlobalWorkerOptions.workerSrc = "./assets/pdfjs/pdf.worker.min.j
     // UI wiring
     // =========================
     function rebuildEverything(){
+  const song = getSong?.();
+  if (!song){
+    console.warn("[rebuildEverything] No song selected yet.");
+    return;
+  }
+
+  // If your code expects song.choreo to exist, ensure it:
+  song.choreo ??= {};
+  const pageKey = String(state.pdf?.page || 1);
+  song.choreo[pageKey] ??= []; // <-- this prevents undefined.choreo patterns
+
+  // ...rest of your existing rebuildEverything...
       rebuildSongSelect();
       rebuildTermSelect();
       rebuildSectionSelect();
@@ -2276,7 +2288,7 @@ window.pdfjsLib.GlobalWorkerOptions.workerSrc = "./assets/pdfjs/pdf.worker.min.j
       buildThumbnails();
       renderPage();
       loadStudentNotes();
-
+    
       // update layer chips
       $("#layerChoreo").classList.toggle("active", state.ui.activeLayers.choreo);
       $("#layerFormations").classList.toggle("active", state.ui.activeLayers.formation);
@@ -2676,18 +2688,20 @@ window.pdfjsLib.GlobalWorkerOptions.workerSrc = "./assets/pdfjs/pdf.worker.min.j
     // =========================
     // Boot
     // =========================
-    function boot(){
-      // If no role chosen, show account modal once
-      if (!state.role){
-        state.ui.rehearsalMode = true;
-        saveState();
-        openAccountModal();
-      }
-      rebuildEverything();
-      // ensure song selection
-      setSong(state.ui.selectedSongId || "warmups");
-      syncPulse();
+   function boot(){
+    // If no role chosen, show account modal once
+    if (!state.role){
+      state.ui.rehearsalMode = true;
+      saveState();
+      openAccountModal();
     }
+  
+    // ✅ set song first so rebuildEverything has something to read
+    setSong(state.ui.selectedSongId || "warmups");
+  
+    rebuildEverything();
+    syncPulse();
+  }
 
     // Wait for pdf.js to be ready (defer script)
     window.addEventListener("load", boot);
