@@ -2370,28 +2370,51 @@ async function loadPdfFromDataUrl(dataUrl){
     });
 
     $("#pdfFileInput").addEventListener("change", (e) => {
-      const f = e.target.files?.[0];
-      e.target.value = "";
-      if (!f) return;
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const dataUrl = String(reader.result);
-        const song = getSong();
-        song.pdf = { name: f.name, dataUrl };
-        state.pdf.page = 1;
-        pdfDoc = null;
-        saveState();
-        try{
-          await loadPdfFromDataUrl(dataUrl);
-          await renderPage();
-          openToast("PDF uploaded.");
-        }catch(err){
-          console.error(err);
-          openToast("PDF load failed.");
-        }
-      };
-      reader.readAsDataURL(f);
-    });
+  const f = e.target.files?.[0];
+  e.target.value = "";
+  if (!f) return;
+
+  console.log("[PDF] selected:", f.name, f.type, f.size);
+
+  const reader = new FileReader();
+
+  reader.onerror = () => {
+    console.error("[PDF] FileReader error:", reader.error);
+    openToast("PDF read failed (FileReader error).");
+  };
+
+  reader.onload = async () => {
+    try {
+      const dataUrl = String(reader.result);
+      console.log("[PDF] dataUrl starts with:", dataUrl.slice(0, 30));
+
+      const song = getSong();
+      if (!song) {
+        console.warn("[PDF] No song selected.");
+        openToast("Select a song first.");
+        return;
+      }
+
+      song.pdf = { name: f.name, dataUrl };
+      state.pdf.page = 1;
+      pdfDoc = null;
+      saveState();
+
+      console.log("[PDF] calling loadPdfFromDataUrl...");
+      await loadPdfFromDataUrl(dataUrl);
+
+      console.log("[PDF] rendering page...");
+      await renderPage();
+
+      openToast("PDF uploaded.");
+    } catch (err) {
+      console.error("[PDF] upload handler failed:", err);
+      openToast("PDF upload failed — check console.");
+    }
+  };
+
+  reader.readAsDataURL(f);
+});
 
     $("#prevPageBtn").addEventListener("click", () => {
       if (!pdfDoc) return;
