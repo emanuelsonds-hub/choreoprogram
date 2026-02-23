@@ -2134,6 +2134,18 @@ window.pdfjsLib.GlobalWorkerOptions.workerSrc = "./assets/pdfjs/pdf.worker.min.j
       openToast("Exported JSON.");
     }
 
+    function ensureSongPageModel(song, pageNum){
+  song.pages ??= {};
+  song.pages[pageNum] ??= {
+    choreo: [],
+    formations: [],
+    comments: [],
+    layers: { choreo: true, formations: true, comments: true }
+  };
+  return song.pages[pageNum];
+}
+
+    
     function importJsonFile(file){
       const reader = new FileReader();
       reader.onload = () => {
@@ -2681,11 +2693,10 @@ window.pdfjsLib.GlobalWorkerOptions.workerSrc = "./assets/pdfjs/pdf.worker.min.j
     window.addEventListener("load", boot);
     
 document.getElementById('resetLayoutBtn').addEventListener('click', () => {
-  state.ui = {
-    pdfCollapsed: false,
-    formationCollapsed: false,
-    thumbsCollapsed: false,
-    audioCollapsed: false
+  state.ui.pdfCollapsed = false;
+  state.ui.formationCollapsed = false;
+  state.ui.thumbsCollapsed = false;
+  state.ui.audioCollapsed = false;
   };
   saveState();
   rebuildEverything();
