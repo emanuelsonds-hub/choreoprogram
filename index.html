@@ -29,7 +29,7 @@
   -->
 
   <!-- PDF.js (CDN) -->
-<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.7.76/build/pdf.min.js"></script>
+<script src="./assets/pdfjs/pdf.min.js"></script>
   
   <style>
     :root{
@@ -1017,9 +1017,8 @@ async function waitForPdfJs(){
 async function loadPdfFromDataUrl(dataUrl){
   await waitForPdfJs();
 
-  window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-  "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.7.76/build/pdf.worker.min.js";
-
+window.pdfjsLib.GlobalWorkerOptions.workerSrc = "./assets/pdfjs/pdf.worker.min.js";
+  
   const loadingTask = window.pdfjsLib.getDocument({ url: dataUrl });
   pdfDoc = await loadingTask.promise;
 
