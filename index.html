@@ -854,10 +854,15 @@
     // Local "cloud" storage (stub)
     // =========================
     const STORAGE_KEY = "choreoCoach_v1";
-    const saveState = () => {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      syncPulse();
-    };
+   const saveState = () => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    syncPulse();
+  } catch (err) {
+    console.error("[saveState] Failed to save state:", err);
+    openToast("Save failed (storage limit). PDF may be too large.");
+  }
+};
     const loadState = () => {
       const raw = localStorage.getItem(STORAGE_KEY);
       return raw ? JSON.parse(raw) : null;
