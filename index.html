@@ -552,6 +552,7 @@
 
         <button class="btn" id="exportBtn" title="Export Production JSON">Export</button>
         <button class="btn" id="importBtn" title="Import Production JSON">Import</button>
+        <button id="resetLayoutBtn">Reset Layout</button>
 
         <div class="status" title="Sync status">
           <span class="dot ok" id="syncDot"></span>
@@ -2678,6 +2679,18 @@ window.pdfjsLib.GlobalWorkerOptions.workerSrc = "./assets/pdfjs/pdf.worker.min.j
 
     // Wait for pdf.js to be ready (defer script)
     window.addEventListener("load", boot);
+    
+document.getElementById('resetLayoutBtn').addEventListener('click', () => {
+  state.ui = {
+    pdfCollapsed: false,
+    formationCollapsed: false,
+    thumbsCollapsed: false,
+    audioCollapsed: false
+  };
+  saveState();
+  rebuildEverything();
+});
+    
   </script>
 </body>
 </html>
