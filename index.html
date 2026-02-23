@@ -1131,8 +1131,12 @@ window.pdfjsLib.GlobalWorkerOptions.workerSrc = "./assets/pdfjs/pdf.worker.min.j
       const canvas = $("#pdfCanvas");
       const w = canvas.width, h = canvas.height;
 
-      const visible = song.markers.filter(m => m.page === page)
-        .filter(m => state.ui.activeLayers[m.layer] === true);
+      const markers = Array.isArray(song.markers) ? song.markers : [];
+      const layers = state.ui.activeLayers || {};
+      
+      const visible = markers
+        .filter(m => m && m.page === page)
+        .filter(m => layers[m.layer] === true);
 
       for (const m of visible){
         const el = document.createElement("div");
