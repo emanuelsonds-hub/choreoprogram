@@ -1002,6 +1002,13 @@
   });
 }
 
+async function waitForPdfJs(){
+  return new Promise(resolve => {
+    const check = () => (window.pdfjsLib ? resolve() : setTimeout(check, 50));
+    check();
+  });
+}
+
 async function loadPdfFromDataUrl(dataUrl){
   await waitForPdfJs();
 
@@ -1010,18 +1017,15 @@ async function loadPdfFromDataUrl(dataUrl){
 
   const loadingTask = window.pdfjsLib.getDocument({ url: dataUrl });
   pdfDoc = await loadingTask.promise;
-  // ... rest of your function ...
-}
 
-      const loadingTask = window.pdfjsLib.getDocument({ url: dataUrl });
-      pdfDoc = await loadingTask.promise;
-      state.pdf.numPages = pdfDoc.numPages;
-      state.pdf.page = clamp(state.pdf.page, 1, state.pdf.numPages);
-      $("#pdfInfoBadge").textContent = `${state.pdf.numPages} pages`;
-      saveState();
-      await renderPage();
-      buildThumbnails(); // lightweight thumbnail placeholders (real renders optional later)
-    }
+  state.pdf.numPages = pdfDoc.numPages;
+  state.pdf.page = clamp(state.pdf.page, 1, state.pdf.numPages);
+  $("#pdfInfoBadge").textContent = `${state.pdf.numPages} pages`;
+
+  saveState();
+  await renderPage();
+  buildThumbnails();
+}
 
     async function renderPage(){
       const song = getSong();
