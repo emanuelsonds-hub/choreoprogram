@@ -1,0 +1,2767 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Choir Choreo + PDF + Formations + Tracks</title>
+
+  <!--
+    Single-file "index.html" scaffold that BUILDS IN all requested features (as working MVP behaviors + stubs for backend).
+    What’s real/working here:
+      - Teacher “account” (local demo), student access code join (local demo)
+      - Playlist with warmups (default screen)
+      - Collapsible PDF viewer + PDF upload, page thumbnails, markers rendered on pages
+      - Point-and-click marker placement (no drag-drop)
+      - Word bank + custom terms
+      - Collapsible formations window with number line 20L..0..20R and grid overlay + presets
+      - Roster with section tags/color coding, assign roster items to formation dots
+      - Audio practice tracks panel below PDF with volume, mute, solo, speed, loop A/B
+      - Page section labels
+      - Rehearsal mode (non-editing)
+      - Layers toggles (choreo / formations / comments)
+      - Timeline sync (time-based anchors) + jump/highlight markers by playback time
+      - Cloud sync stubs (export/import JSON; hooks provided)
+      - Practice analytics (local, teacher-only)
+    What still needs a real backend later:
+      - True teacher account auth, multi-device sync, real student rosters at scale, secure storage.
+    iOS translation:
+      - This UI maps cleanly to SwiftUI panels; PDF → PDFKit; audio → AVFoundation; storage → CoreData/CloudKit or a shared backend.
+  -->
+
+  <!-- PDF.js (CDN) -->
+<script src="./assets/pdfjs/pdf.min.js"></script>
+  
+  <style>
+    :root{
+      --bg:#0b1020;
+      --panel:#121a33;
+      --panel2:#0f1730;
+      --text:#e7ecff;
+      --muted:#aeb7e6;
+      --line:#2a3564;
+      --accent:#7aa2ff;
+      --accent2:#78f0c8;
+      --danger:#ff6b7a;
+      --shadow: 0 12px 30px rgba(0,0,0,.35);
+      --radius: 14px;
+      --gap: 12px;
+      --font: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    }
+    *{ box-sizing:border-box; }
+    html,body{ height:100%; }
+    body{
+      margin:0;
+      background: radial-gradient(1200px 800px at 20% -10%, rgba(122,162,255,.18), transparent 55%),
+                  radial-gradient(1000px 700px at 95% 0%, rgba(120,240,200,.12), transparent 50%),
+                  var(--bg);
+      color:var(--text);
+      font-family:var(--font);
+      overflow:hidden;
+    }
+    a{ color:var(--accent); text-decoration:none; }
+    button, input, select, textarea{ font:inherit; color:inherit; }
+    .app{
+      height:100%;
+      display:grid;
+      grid-template-rows:auto 1fr;
+    }
+
+    /* Top bar */
+    .topbar{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:var(--gap);
+      padding:12px 14px;
+      border-bottom:1px solid rgba(42,53,100,.8);
+      background: linear-gradient(180deg, rgba(18,26,51,.85), rgba(15,23,48,.72));
+      backdrop-filter: blur(10px);
+    }
+    .brand{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      font-weight:700;
+      letter-spacing:.2px;
+    }
+    .pill{
+      font-size:12px;
+      padding:4px 10px;
+      border:1px solid rgba(42,53,100,.9);
+      border-radius:999px;
+      color:var(--muted);
+      background: rgba(15,23,48,.35);
+    }
+    .top-actions{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+    }
+    .btn{
+      border:1px solid rgba(42,53,100,.95);
+      background: rgba(18,26,51,.55);
+      border-radius:12px;
+      padding:8px 10px;
+      cursor:pointer;
+      box-shadow: 0 6px 16px rgba(0,0,0,.18);
+      transition: transform .05s ease, border-color .12s ease, background .12s ease;
+    }
+    .btn:hover{ border-color: rgba(122,162,255,.8); background: rgba(18,26,51,.75); }
+    .btn:active{ transform: translateY(1px); }
+    .btn.primary{
+      border-color: rgba(122,162,255,.75);
+      background: rgba(122,162,255,.16);
+    }
+    .btn.danger{
+      border-color: rgba(255,107,122,.7);
+      background: rgba(255,107,122,.12);
+    }
+    .btn.ghost{
+      background: transparent;
+      box-shadow:none;
+    }
+    .status{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      color:var(--muted);
+      font-size:13px;
+    }
+    .dot{
+      width:9px; height:9px;
+      border-radius:50%;
+      background: rgba(174,183,230,.35);
+      border:1px solid rgba(174,183,230,.25);
+    }
+    .dot.ok{ background: rgba(120,240,200,.65); border-color: rgba(120,240,200,.4); }
+    .dot.warn{ background: rgba(255,193,7,.75); border-color: rgba(255,193,7,.4); }
+    .dot.bad{ background: rgba(255,107,122,.75); border-color: rgba(255,107,122,.4); }
+    .select{
+      border:1px solid rgba(42,53,100,.95);
+      background: rgba(15,23,48,.35);
+      border-radius:12px;
+      padding:8px 10px;
+      min-width: 240px;
+    }
+
+    /* Main layout */
+    .main{
+      height:100%;
+      display:grid;
+      grid-template-columns: 260px 1fr 340px;
+      gap: var(--gap);
+      padding: var(--gap);
+      overflow:hidden;
+    }
+    .panel{
+      background: rgba(18,26,51,.6);
+      border:1px solid rgba(42,53,100,.9);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow:hidden;
+      display:flex;
+      flex-direction:column;
+      min-width:0;
+      min-height:0;
+    }
+    .panel-header{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      padding:10px 12px;
+      border-bottom:1px solid rgba(42,53,100,.8);
+      background: rgba(15,23,48,.35);
+    }
+    .panel-title{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      font-weight:700;
+      font-size:13px;
+      letter-spacing:.2px;
+    }
+    .panel-body{
+      padding:10px 12px;
+      overflow:auto;
+      min-height:0;
+    }
+    .subtle{
+      color:var(--muted);
+      font-size:13px;
+      line-height:1.35;
+    }
+    .row{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .col{ display:flex; flex-direction:column; gap:10px; }
+    .stack{ display:flex; flex-direction:column; gap:8px; }
+    .divider{ height:1px; background: rgba(42,53,100,.7); margin:10px 0; }
+    .small{ font-size:12px; color:var(--muted); }
+    .badge{
+      font-size:11px;
+      padding:2px 8px;
+      border-radius:999px;
+      border:1px solid rgba(42,53,100,.9);
+      color:var(--muted);
+      background: rgba(15,23,48,.25);
+      white-space:nowrap;
+    }
+    .kbd{
+      font-family:var(--mono);
+      font-size:11px;
+      padding:2px 6px;
+      border-radius:8px;
+      border:1px solid rgba(42,53,100,.8);
+      color: rgba(231,236,255,.9);
+      background: rgba(11,16,32,.35);
+    }
+    .input, .textarea{
+      width:100%;
+      border:1px solid rgba(42,53,100,.95);
+      background: rgba(15,23,48,.3);
+      border-radius: 12px;
+      padding:8px 10px;
+      outline:none;
+    }
+    .textarea{ min-height:70px; resize:vertical; }
+    .chip{
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      font-size:12px;
+      padding:5px 9px;
+      border-radius:999px;
+      border:1px solid rgba(42,53,100,.95);
+      background: rgba(15,23,48,.22);
+      cursor:pointer;
+      user-select:none;
+    }
+    .chip.active{
+      border-color: rgba(122,162,255,.8);
+      background: rgba(122,162,255,.14);
+      color: rgba(231,236,255,.95);
+    }
+
+    /* Left: thumbnails + playlist */
+    .thumb{
+      border:1px solid rgba(42,53,100,.8);
+      border-radius:12px;
+      background: rgba(15,23,48,.25);
+      padding:8px;
+      cursor:pointer;
+    }
+    .thumb:hover{ border-color: rgba(122,162,255,.7); }
+    .thumb-top{
+      display:flex;
+      justify-content:space-between;
+      gap:8px;
+      align-items:center;
+      margin-bottom:6px;
+    }
+    .thumb-canvas{
+      width:100%;
+      aspect-ratio: 8.5 / 11;
+      background: rgba(11,16,32,.4);
+      border:1px solid rgba(42,53,100,.65);
+      border-radius:10px;
+      overflow:hidden;
+      display:grid;
+      place-items:center;
+      color: rgba(174,183,230,.6);
+      font-size:12px;
+    }
+    .thumb-badges{ display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+    .filter-row{ display:flex; gap:8px; align-items:center; }
+
+    /* Center: PDF + overlays + audio */
+    .center{
+      display:grid;
+      grid-template-rows: 1fr auto;
+      gap: var(--gap);
+      min-height:0;
+    }
+    .pdfShell{
+      position:relative;
+      overflow:hidden;
+      border-radius: var(--radius);
+      border:1px solid rgba(42,53,100,.9);
+      background: rgba(18,26,51,.35);
+      box-shadow: var(--shadow);
+      display:flex;
+      flex-direction:column;
+      min-height:0;
+    }
+    .pdfHeader{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      padding:10px 12px;
+      border-bottom:1px solid rgba(42,53,100,.8);
+      background: rgba(15,23,48,.35);
+    }
+    .pdfTitle{ display:flex; align-items:center; gap:10px; font-weight:800; font-size:13px; }
+    .pdfBody{
+      position:relative;
+      flex:1;
+      min-height:0;
+      overflow:auto;
+      padding:12px;
+    }
+    .pageWrap{
+      position:relative;
+      margin:0 auto;
+      width:fit-content;
+    }
+    canvas#pdfCanvas{
+      display:block;
+      border-radius: 12px;
+      border:1px solid rgba(42,53,100,.65);
+      background: rgba(11,16,32,.25);
+      box-shadow: 0 10px 26px rgba(0,0,0,.18);
+    }
+    .overlay{
+      position:absolute;
+      inset:0;
+      pointer-events:none; /* markers receive pointer via child */
+    }
+    .marker{
+      position:absolute;
+      transform: translate(-50%, -50%);
+      pointer-events:auto;
+      cursor:pointer;
+      user-select:none;
+    }
+    .marker .pin{
+      width:12px; height:12px;
+      border-radius:50%;
+      border:1px solid rgba(231,236,255,.7);
+      background: rgba(122,162,255,.8);
+      box-shadow: 0 10px 18px rgba(0,0,0,.22);
+    }
+    .marker.comment .pin{ background: rgba(120,240,200,.85); }
+    .marker.formation .pin{ background: rgba(255,193,7,.85); }
+    .marker .label{
+      margin-top:4px;
+      font-size:11px;
+      padding:3px 7px;
+      border-radius:999px;
+      border:1px solid rgba(42,53,100,.8);
+      background: rgba(15,23,48,.55);
+      color: rgba(231,236,255,.92);
+      white-space:nowrap;
+      max-width: 220px;
+      overflow:hidden;
+      text-overflow: ellipsis;
+    }
+    .marker.active .pin{
+      outline: 3px solid rgba(122,162,255,.35);
+      outline-offset: 2px;
+    }
+
+    /* Audio panel */
+    .audio{
+      border-radius: var(--radius);
+      border:1px solid rgba(42,53,100,.9);
+      background: rgba(18,26,51,.55);
+      box-shadow: var(--shadow);
+      overflow:hidden;
+      display:flex;
+      flex-direction:column;
+      min-height: 210px;
+    }
+    .audioHeader{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      padding:10px 12px;
+      border-bottom:1px solid rgba(42,53,100,.8);
+      background: rgba(15,23,48,.35);
+    }
+    .audioBody{
+      padding:10px 12px;
+      overflow:auto;
+      min-height:0;
+    }
+    .track{
+      border:1px solid rgba(42,53,100,.75);
+      border-radius: 14px;
+      background: rgba(15,23,48,.28);
+      padding:10px;
+      display:grid;
+      grid-template-columns: 1fr auto;
+      gap:10px;
+      margin-bottom:10px;
+    }
+    .trackTitle{
+      font-weight:700;
+      font-size:13px;
+      display:flex;
+      gap:8px;
+      align-items:center;
+    }
+    .trackControls{
+      display:flex;
+      gap:8px;
+      align-items:center;
+      justify-content:flex-end;
+      flex-wrap:wrap;
+    }
+    .slider{
+      width: 180px;
+    }
+
+    /* Right: formations + tools/layers */
+    .stage{
+      position:relative;
+      height: 320px;
+      border-radius: 14px;
+      border:1px solid rgba(42,53,100,.75);
+      background: linear-gradient(180deg, rgba(11,16,32,.25), rgba(15,23,48,.25));
+      overflow:hidden;
+    }
+    .stageGrid{
+      position:absolute; inset:0;
+      background-image:
+        linear-gradient(to right, rgba(42,53,100,.35) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(42,53,100,.25) 1px, transparent 1px);
+      background-size: 40px 40px;
+      opacity:.8;
+      pointer-events:none;
+      display:none;
+    }
+    .stageGrid.on{ display:block; }
+    .axis{
+      position:absolute;
+      left:0; right:0; bottom:0;
+      padding:8px 10px;
+      display:flex;
+      justify-content:space-between;
+      gap:8px;
+      font-size:11px;
+      color: rgba(174,183,230,.9);
+      background: rgba(15,23,48,.45);
+      border-top:1px solid rgba(42,53,100,.65);
+      pointer-events:none;
+      font-family:var(--mono);
+    }
+    .axis .tick{ opacity:.95; }
+    .formationDot{
+      position:absolute;
+      width:16px; height:16px;
+      border-radius:50%;
+      transform: translate(-50%, -50%);
+      border:1px solid rgba(231,236,255,.7);
+      background: rgba(174,183,230,.35);
+      box-shadow: 0 10px 18px rgba(0,0,0,.18);
+      cursor:pointer;
+      display:grid;
+      place-items:center;
+      font-size:10px;
+      user-select:none;
+    }
+    .formationDot.assigned{
+      background: rgba(122,162,255,.5);
+    }
+    .formationDot .abbr{
+      font-weight:800;
+      color: rgba(231,236,255,.95);
+      text-shadow: 0 1px 0 rgba(0,0,0,.25);
+    }
+
+    /* Modal */
+    .modalBackdrop{
+      position:fixed;
+      inset:0;
+      background: rgba(0,0,0,.55);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      padding:16px;
+      z-index:50;
+    }
+    .modalBackdrop.on{ display:flex; }
+    .modal{
+      width:min(760px, 100%);
+      border-radius: 16px;
+      border:1px solid rgba(42,53,100,.95);
+      background: rgba(18,26,51,.95);
+      box-shadow: 0 20px 50px rgba(0,0,0,.5);
+      overflow:hidden;
+    }
+    .modalHeader{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      padding:12px 14px;
+      border-bottom:1px solid rgba(42,53,100,.8);
+      background: rgba(15,23,48,.55);
+      font-weight:800;
+    }
+    .modalBody{
+      padding:12px 14px;
+      max-height: 70vh;
+      overflow:auto;
+    }
+    .modalFooter{
+      display:flex;
+      justify-content:flex-end;
+      gap:10px;
+      padding:12px 14px;
+      border-top:1px solid rgba(42,53,100,.8);
+      background: rgba(15,23,48,.35);
+    }
+
+    /* Responsive */
+    @media (max-width: 1100px){
+      body{ overflow:auto; }
+      .main{
+        grid-template-columns: 1fr;
+        grid-template-rows: auto auto auto;
+        overflow:visible;
+      }
+      .center{ grid-template-rows: auto auto; }
+      .panel, .pdfShell, .audio{ min-height: 360px; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="brand">
+        <div style="width:34px;height:34px;border-radius:12px;display:grid;place-items:center;border:1px solid rgba(42,53,100,.9);background:rgba(122,162,255,.12);">
+          <span style="font-weight:900;color:rgba(231,236,255,.92)">CC</span>
+        </div>
+        <div>
+          ChoreoCoach
+          <span class="pill" id="modePill">Mode: —</span>
+        </div>
+      </div>
+
+      <div class="top-actions">
+        <select id="songSelect" class="select" title="Playlist">
+          <option value="">Select a song…</option>
+        </select>
+
+        <button class="btn" id="toggleRehearsalBtn" title="Toggle Rehearsal Mode">Rehearsal Mode</button>
+
+        <button class="btn" id="exportBtn" title="Export Production JSON">Export</button>
+        <button class="btn" id="importBtn" title="Import Production JSON">Import</button>
+        <button id="resetLayoutBtn">Reset Layout</button>
+
+        <div class="status" title="Sync status">
+          <span class="dot ok" id="syncDot"></span>
+          <span id="syncLabel">Local</span>
+        </div>
+
+        <button class="btn primary" id="accountBtn">Account</button>
+      </div>
+    </div>
+
+    <div class="main">
+      <!-- LEFT: Playlist + Thumbnails + Sections -->
+      <div class="panel" id="leftPanel">
+        <div class="panel-header">
+          <div class="panel-title">
+            Playlist & Pages
+            <span class="badge" id="roleBadge">—</span>
+          </div>
+          <button class="btn ghost" id="collapseLeftBtn" title="Collapse left panel">⟷</button>
+        </div>
+        <div class="panel-body">
+          <div class="stack">
+            <div class="subtle">
+              Default view starts with <b>Warmups</b>. Teachers can upload PDFs & tracks per song.
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="row" style="justify-content:space-between;">
+              <div class="small"><b>Pages</b> <span class="kbd">Click thumbnail</span></div>
+              <div class="filter-row">
+                <label class="chip active" id="filterAll">All</label>
+                <label class="chip" id="filterWithMarkers">With markers</label>
+              </div>
+            </div>
+
+            <div id="thumbList" class="stack"></div>
+
+            <div class="divider"></div>
+
+            <div class="small"><b>Page Sections</b> (teacher can define labels)</div>
+            <select id="sectionSelect" class="select" style="width:100%;min-width:0">
+              <option value="">Jump to section…</option>
+            </select>
+
+            <div class="divider"></div>
+
+            <div class="small">
+              <b>Cloud Sync</b> (stub)
+              <div class="subtle" style="margin-top:6px">
+                This demo stores everything in <span class="kbd">localStorage</span>. “Export/Import” simulate cloud sync.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CENTER: PDF + Audio -->
+      <div class="center">
+        <div class="pdfShell" id="pdfShell">
+          <div class="pdfHeader">
+            <div class="pdfTitle">
+              PDF Viewer
+              <span class="badge" id="pdfInfoBadge">No PDF loaded</span>
+            </div>
+            <div class="row">
+              <button class="btn" id="togglePdfBtn">Collapse PDF</button>
+              <button class="btn" id="uploadPdfBtn">Upload PDF</button>
+
+              <button class="btn" id="prevPageBtn">◀</button>
+              <span class="pill" id="pagePill">—</span>
+              <button class="btn" id="nextPageBtn">▶</button>
+
+              <button class="btn" id="zoomOutBtn">−</button>
+              <button class="btn" id="zoomInBtn">+</button>
+            </div>
+          </div>
+
+          <div class="pdfBody" id="pdfBody">
+            <div class="subtle" id="pdfEmptyHint" style="max-width:720px;margin:40px auto;">
+              <b>Load a song and upload its PDF</b> to start placing choreography markers.
+              <div style="margin-top:10px;">
+                Teacher: click <span class="kbd">Upload PDF</span>. Student: you’ll see whatever the teacher created.
+              </div>
+            </div>
+
+            <div class="pageWrap" id="pageWrap" style="display:none;">
+              <canvas id="pdfCanvas"></canvas>
+              <div class="overlay" id="overlay"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="audio" id="audioPanel">
+          <div class="audioHeader">
+            <div class="panel-title">Audio Practice Tracks</div>
+            <div class="row">
+              <button class="btn" id="uploadAudioBtn">Add Track</button>
+              <button class="btn" id="playBtn">Play</button>
+              <button class="btn" id="pauseBtn">Pause</button>
+              <button class="btn" id="stopBtn">Stop</button>
+            </div>
+          </div>
+
+          <div class="audioBody">
+            <div class="row" style="justify-content:space-between; align-items:flex-start;">
+              <div class="stack" style="min-width:280px; flex:1;">
+                <div class="small"><b>Playback</b></div>
+                <div class="row">
+                  <label class="chip" id="setLoopA">Set A</label>
+                  <label class="chip" id="setLoopB">Set B</label>
+                  <label class="chip" id="toggleLoop">Loop Off</label>
+                  <span class="pill" id="loopPill">A: — | B: —</span>
+                </div>
+                <div class="row">
+                  <span class="small">Speed</span>
+                  <input id="speed" type="range" min="0.75" max="1.25" step="0.01" value="1" style="width:220px" />
+                  <span class="pill" id="speedPill">1.00×</span>
+                </div>
+                <div class="row">
+                  <span class="small">Time</span>
+                  <span class="pill" id="timePill">0:00</span>
+                  <span class="small">Active markers</span>
+                  <span class="pill" id="activeMarkerPill">0</span>
+                </div>
+              </div>
+
+              <div class="stack" style="min-width:260px; flex:1;">
+                <div class="small"><b>Timeline Sync</b></div>
+                <div class="subtle">
+                  Markers can be time-anchored. In teacher edit mode, use <span class="kbd">Link to current time</span> inside a marker.
+                </div>
+              </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <div id="trackList"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: Tools/Layers + Formations + Roster/Analytics -->
+      <div class="panel" id="rightPanel">
+        <div class="panel-header">
+          <div class="panel-title">Tools, Layers, Formations</div>
+          <button class="btn ghost" id="collapseRightBtn" title="Collapse right panel">⟷</button>
+        </div>
+
+        <div class="panel-body">
+          <div class="stack">
+            <div class="small"><b>Mode</b></div>
+            <div class="row">
+              <span class="badge" id="editBadge">—</span>
+              <span class="badge" id="prodBadge">Production: Local Demo</span>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="small"><b>Layers</b></div>
+            <div class="row">
+              <label class="chip active" id="layerChoreo">Choreo</label>
+              <label class="chip active" id="layerFormations">Formations</label>
+              <label class="chip active" id="layerComments">Comments</label>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="small"><b>Marker Tool</b> <span class="kbd">Point & click on the PDF</span></div>
+            <div class="row">
+              <select id="layerSelect" class="select" style="min-width:0; flex:1;">
+                <option value="choreo">Choreo</option>
+                <option value="comment">Comment</option>
+                <option value="formation">Formation Trigger</option>
+              </select>
+              <button class="btn" id="togglePlaceBtn">Place: Off</button>
+            </div>
+
+            <div class="small"><b>Word Bank</b></div>
+            <div class="row">
+              <select id="termSelect" class="select" style="min-width:0; flex:1;"></select>
+              <button class="btn" id="addTermBtn">+ Term</button>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="row" style="justify-content:space-between;">
+              <div class="small"><b>Formations</b></div>
+              <button class="btn" id="toggleFormationBtn">Collapse</button>
+            </div>
+
+            <div id="formationBlock">
+              <div class="row" style="justify-content:space-between;">
+                <div class="row">
+                  <label class="chip" id="toggleGrid">Grid</label>
+                  <label class="chip" id="formationClickMode">Place dots: Off</label>
+                </div>
+                <select id="formationPreset" class="select" style="min-width:0; width: 160px;">
+                  <option value="arc">Arc</option>
+                  <option value="rows3">3 Rows</option>
+                  <option value="block">Block 4x5</option>
+                  <option value="clear">Clear</option>
+                </select>
+              </div>
+
+              <div class="stage" id="stage">
+                <div class="stageGrid" id="stageGrid"></div>
+                <div class="axis" id="axis"></div>
+              </div>
+
+              <div class="row" style="margin-top:10px;">
+                <button class="btn" id="saveFormationSnapshotBtn">Save Formation @ time</button>
+                <span class="pill" id="formationCountPill">0 dots</span>
+              </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="small"><b>Roster</b> (teacher only)</div>
+            <div id="rosterBlock" class="stack">
+              <div class="row">
+                <input id="studentName" class="input" placeholder="Student name" />
+                <select id="studentSection" class="select" style="min-width:140px;">
+                  <option value="Trebles">Trebles</option>
+                  <option value="Lows">Lows</option>
+                  <option value="Soprano">Soprano</option>
+                  <option value="Alto">Alto</option>
+                  <option value="Tenor">Tenor</option>
+                  <option value="Bass">Bass</option>
+                </select>
+              </div>
+              <div class="row">
+                <input id="sectionColor" class="input" value="#7aa2ff" title="Section color (hex)" />
+                <button class="btn" id="addStudentBtn">Add</button>
+              </div>
+              <div id="rosterList" class="stack"></div>
+              <div class="subtle">Tip: click a roster name, then click a formation dot to assign.</div>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="small"><b>Practice Analytics</b> (teacher only)</div>
+            <div id="analyticsBlock" class="stack">
+              <div class="row">
+                <button class="btn" id="refreshAnalyticsBtn">Refresh</button>
+                <button class="btn danger" id="clearAnalyticsBtn">Clear</button>
+              </div>
+              <div id="analyticsSummary" class="subtle"></div>
+              <div id="analyticsTable" class="stack"></div>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="small"><b>Student Personal Notes</b> (student only)</div>
+            <div id="studentNotesBlock" class="stack">
+              <textarea id="studentNotes" class="textarea" placeholder="Your private notes for this song…"></textarea>
+              <button class="btn" id="saveNotesBtn">Save Notes</button>
+              <div class="small">Notes are private to the student in this demo.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hidden file inputs -->
+  <input id="pdfFileInput" type="file" accept="application/pdf" style="display:none" />
+  <input id="audioFileInput" type="file" accept="audio/*" style="display:none" />
+  <input id="importFileInput" type="file" accept="application/json" style="display:none" />
+
+  <!-- Modal -->
+  <div class="modalBackdrop" id="modalBackdrop">
+    <div class="modal">
+      <div class="modalHeader">
+        <div id="modalTitle">Modal</div>
+        <button class="btn ghost" id="modalCloseBtn">✕</button>
+      </div>
+      <div class="modalBody" id="modalBody"></div>
+      <div class="modalFooter" id="modalFooter"></div>
+    </div>
+  </div>
+
+  <script>
+    // =========================
+    // Utilities
+    // =========================
+    const $ = (sel, root=document) => root.querySelector(sel);
+    const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
+    const uid = () => Math.random().toString(36).slice(2,10) + "-" + Date.now().toString(36);
+    const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
+    const fmtTime = (s) => {
+      s = Math.max(0, s|0);
+      const m = Math.floor(s/60);
+      const r = s%60;
+      return `${m}:${String(r).padStart(2,'0')}`;
+    };
+    const deepClone = (x) => JSON.parse(JSON.stringify(x));
+
+    // =========================
+    // Local "cloud" storage (stub)
+    // =========================
+    const STORAGE_KEY = "choreoCoach_v1";
+   const saveState = () => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    syncPulse();
+  } catch (err) {
+    console.error("[saveState] Failed to save state:", err);
+    openToast("Save failed (storage limit). PDF may be too large.");
+  }
+};
+    const loadState = () => {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    };
+
+    function syncPulse(){
+      // Local-only indicator (stub for cloud)
+      const dot = $("#syncDot");
+      dot.classList.remove("ok","warn","bad");
+      dot.classList.add("ok");
+      $("#syncLabel").textContent = "Local";
+    }
+
+    // =========================
+    // Default data
+    // =========================
+    const defaultWordBank = [
+      { id: uid(), label: "Step-touch", category:"Footwork" },
+      { id: uid(), label: "Grapevine", category:"Footwork" },
+      { id: uid(), label: "Jazz square", category:"Footwork" },
+      { id: uid(), label: "Body roll", category:"Style" },
+      { id: uid(), label: "Ripple", category:"Ensemble" },
+      { id: uid(), label: "Clap", category:"Arms" },
+      { id: uid(), label: "High V", category:"Arms" },
+      { id: uid(), label: "Turn", category:"Turns" },
+      { id: uid(), label: "Kick-ball-change", category:"Footwork" },
+      { id: uid(), label: "Formation change", category:"Formations" },
+    ];
+
+    const defaultProduction = {
+      id: "prod_local",
+      name: "Local Demo Production",
+      accessCode: "HAHS-2026",
+      playlist: [
+        { id:"warmups", title:"Warmups", type:"warmups" },
+        { id:"song1", title:"It’s Still Rock and Roll to Me", type:"song" },
+        { id:"song2", title:"Dance Break Medley", type:"song" },
+      ],
+      songs: {
+        warmups: {
+          id:"warmups",
+          title:"Warmups",
+          type:"warmups",
+          pdf: null,
+          audioTracks: [],
+          sections: [
+            { id: uid(), label:"Lip trills", page:1, y:0 },
+            { id: uid(), label:"Straw phonation", page:1, y:0 },
+            { id: uid(), label:"Sirens", page:1, y:0 },
+          ],
+          markers: [],
+          formationSnapshots: [],
+        },
+        song1: {
+          id:"song1",
+          title:"It’s Still Rock and Roll to Me",
+          type:"song",
+          pdf: null,
+          audioTracks: [],
+          sections: [
+            { id: uid(), label:"Intro", page:1, y:0 },
+            { id: uid(), label:"Verse 1", page:1, y:0 },
+            { id: uid(), label:"Chorus", page:2, y:0 },
+          ],
+          markers: [],
+          formationSnapshots: [],
+        },
+        song2: {
+          id:"song2",
+          title:"Dance Break Medley",
+          type:"song",
+          pdf: null,
+          audioTracks: [],
+          sections: [
+            { id: uid(), label:"Section A", page:1, y:0 },
+            { id: uid(), label:"Section B", page:2, y:0 },
+          ],
+          markers: [],
+          formationSnapshots: [],
+        }
+      },
+      roster: [],
+      wordBank: deepClone(defaultWordBank),
+      analytics: {
+        sessions: [] // {id, studentId, songId, startedAt, endedAt, seconds, events:[]}
+      }
+    };
+
+    const defaultState = {
+      role: null, // "teacher" | "student"
+      teacher: { email:"", displayName:"" }, // demo
+      student: { id:"", displayName:"", accessCode:"", selectedRosterId:"" }, // demo
+      production: defaultProduction,
+      ui: {
+        rehearsalMode: false,
+        placing: false,
+        placeLayer: "choreo", // choreo|comment|formation
+        activeLayers: { choreo:true, comment:true, formation:true },
+        selectedSongId: "warmups",
+        selectedTermId: null,
+        selectedMarkerId: null,
+        selectedRosterId: null,
+        leftCollapsed:false,
+        rightCollapsed:false,
+        pdfCollapsed:false,
+        formationCollapsed:false,
+        filterWithMarkers:false
+      },
+      pdf: {
+        page: 1,
+        scale: 1.25,
+        numPages: 0
+      },
+      audio: {
+        masterPlaying: false,
+        speed: 1.0,
+        loop: { enabled:false, a:null, b:null }
+      },
+      formation: {
+        grid:false,
+        clickPlace:false,
+        dots: [] // {id, xPct, yPct, assignedRosterId:null}
+      },
+      runtime: {
+        currentSessionId: null,
+        lastTick: 0
+      }
+    };
+
+    let state = loadState() || deepClone(defaultState);
+
+    // =========================
+    // PDF.js setup
+    // =========================
+    let pdfDoc = null;
+    let renderTask = null;
+
+    async function waitForPdfJs(){
+  return new Promise(resolve => {
+    const check = () => (window.pdfjsLib ? resolve() : setTimeout(check, 50));
+    check();
+  });
+}
+
+async function waitForPdfJs(){
+  return new Promise(resolve => {
+    const check = () => (window.pdfjsLib ? resolve() : setTimeout(check, 50));
+    check();
+  });
+}
+
+async function loadPdfFromDataUrl(dataUrl){
+  await waitForPdfJs();
+
+window.pdfjsLib.GlobalWorkerOptions.workerSrc = "./assets/pdfjs/pdf.worker.min.js";
+  
+  const loadingTask = window.pdfjsLib.getDocument({ url: dataUrl });
+  pdfDoc = await loadingTask.promise;
+
+  state.pdf.numPages = pdfDoc.numPages;
+  state.pdf.page = clamp(state.pdf.page, 1, state.pdf.numPages);
+  $("#pdfInfoBadge").textContent = `${state.pdf.numPages} pages`;
+
+  saveState();
+  await renderPage();
+  buildThumbnails();
+}
+
+    async function renderPage(){
+      const song = getSong();
+      const pdfDataUrl = song?.pdf?.dataUrl;
+      if (!pdfDataUrl){
+        $("#pdfEmptyHint").style.display = "";
+        $("#pageWrap").style.display = "none";
+        $("#pagePill").textContent = "—";
+        $("#pdfInfoBadge").textContent = "No PDF loaded";
+        $("#thumbList").innerHTML = "";
+        return;
+      }
+      if (!pdfDoc){
+        await loadPdfFromDataUrl(pdfDataUrl);
+      }
+      const pageNum = state.pdf.page;
+      $("#pagePill").textContent = `Page ${pageNum}/${state.pdf.numPages}`;
+
+      const page = await pdfDoc.getPage(pageNum);
+      const viewport = page.getViewport({ scale: state.pdf.scale });
+
+      const canvas = $("#pdfCanvas");
+      const ctx = canvas.getContext("2d");
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+
+      $("#pdfEmptyHint").style.display = "none";
+      $("#pageWrap").style.display = "";
+
+      if (renderTask) { try { renderTask.cancel(); } catch(_){} }
+      renderTask = page.render({ canvasContext: ctx, viewport });
+      await renderTask.promise;
+
+      const wrap = $("#pageWrap");
+      wrap.style.width = canvas.width + "px";
+      wrap.style.height = canvas.height + "px";
+      $("#overlay").style.width = canvas.width + "px";
+      $("#overlay").style.height = canvas.height + "px";
+
+      drawMarkers();
+    }
+
+    function buildThumbnails(){
+      // For MVP: we don’t render mini canvases for performance in a single file;
+      // thumbnails are clickable placeholders + marker counts.
+      const song = getSong();
+      const list = $("#thumbList");
+      list.innerHTML = "";
+      if (!pdfDoc || !song?.pdf) return;
+
+      for (let p=1; p<=state.pdf.numPages; p++){
+        const counts = markerCountsForPage(p);
+        const hasAny = (counts.choreo+counts.comment+counts.formation) > 0;
+        if (state.ui.filterWithMarkers && !hasAny) continue;
+
+        const el = document.createElement("div");
+        el.className = "thumb";
+        el.innerHTML = `
+          <div class="thumb-top">
+            <div class="small"><b>Page ${p}</b></div>
+            <div class="thumb-badges">
+              ${counts.choreo ? `<span class="badge">C:${counts.choreo}</span>` : ``}
+              ${counts.formation ? `<span class="badge">F:${counts.formation}</span>` : ``}
+              ${counts.comment ? `<span class="badge">N:${counts.comment}</span>` : ``}
+            </div>
+          </div>
+          <div class="thumb-canvas">${hasAny ? "Markers" : "—"}</div>
+        `;
+        el.addEventListener("click", () => {
+          state.pdf.page = p;
+          saveState();
+          renderPage();
+        });
+        list.appendChild(el);
+      }
+    }
+
+    // =========================
+    // Markers (point-and-click)
+    // =========================
+    function markerCountsForPage(page){
+      const song = getSong();
+      const m = (song?.markers || []).filter(x => x.page === page);
+      return {
+        choreo: m.filter(x => x.layer === "choreo").length,
+        comment: m.filter(x => x.layer === "comment").length,
+        formation: m.filter(x => x.layer === "formation").length,
+      };
+    }
+
+    function drawMarkers(){
+      const overlay = $("#overlay");
+      overlay.innerHTML = "";
+      const song = getSong();
+      if (!song) return;
+
+      const page = state.pdf.page;
+      const canvas = $("#pdfCanvas");
+      const w = canvas.width, h = canvas.height;
+
+      const markers = Array.isArray(song.markers) ? song.markers : [];
+      const layers = state.ui.activeLayers || {};
+      
+      const visible = markers
+        .filter(m => m && m.page === page)
+        .filter(m => layers[m.layer] === true);
+
+      for (const m of visible){
+        const el = document.createElement("div");
+        el.className = `marker ${m.layer} ${m.id === state.ui.selectedMarkerId ? "active" : ""}`;
+        el.style.left = (m.xPct * w) + "px";
+        el.style.top  = (m.yPct * h) + "px";
+        el.dataset.id = m.id;
+
+        const term = getTermLabel(m.termId);
+        const label = m.layer === "comment"
+          ? (m.text || "Note")
+          : (term || m.text || "Marker");
+
+        el.innerHTML = `
+          <div class="pin" title="${escapeHtml(label)}"></div>
+          <div class="label">${escapeHtml(label)}</div>
+        `;
+
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          state.ui.selectedMarkerId = m.id;
+          saveState();
+          drawMarkers();
+          openMarkerEditor(m.id);
+        });
+
+        overlay.appendChild(el);
+      }
+
+      // highlight active markers by time if playing
+      highlightMarkersByTime();
+      buildThumbnails();
+    }
+
+    function placeMarkerAtClick(clientX, clientY){
+      const song = getSong();
+      if (!song || !song.pdf) return;
+
+      const pageWrap = $("#pageWrap");
+      const canvas = $("#pdfCanvas");
+      const rect = canvas.getBoundingClientRect();
+
+      const x = clamp(clientX - rect.left, 0, rect.width);
+      const y = clamp(clientY - rect.top, 0, rect.height);
+
+      const xPct = x / rect.width;
+      const yPct = y / rect.height;
+
+      const marker = {
+        id: uid(),
+        songId: song.id,
+        page: state.pdf.page,
+        xPct, yPct,
+        layer: state.ui.placeLayer,
+        termId: state.ui.placeLayer === "choreo" ? state.ui.selectedTermId : null,
+        text: state.ui.placeLayer !== "choreo" ? "" : "",
+        color: null,
+        timeAnchorSec: null
+      };
+      song.markers.push(marker);
+      state.ui.selectedMarkerId = marker.id;
+      saveState();
+      drawMarkers();
+      openMarkerEditor(marker.id);
+    }
+
+    function openMarkerEditor(markerId){
+      const song = getSong();
+      const marker = song?.markers.find(m => m.id === markerId);
+      if (!marker) return;
+
+      const isTeacher = state.role === "teacher";
+      const canEdit = isTeacher && !state.ui.rehearsalMode;
+
+      const termOptions = state.production.wordBank
+        .map(t => `<option value="${t.id}" ${t.id===marker.termId?"selected":""}>${escapeHtml(t.label)} (${escapeHtml(t.category||"")})</option>`)
+        .join("");
+
+      const title = marker.layer === "choreo" ? "Choreo Marker" :
+                    marker.layer === "formation" ? "Formation Trigger" : "Comment Note";
+
+      const body = document.createElement("div");
+      body.className = "stack";
+      body.innerHTML = `
+        <div class="subtle">${escapeHtml(title)} • Page ${marker.page}</div>
+
+        <div class="row">
+          <div style="flex:1">
+            <div class="small"><b>Layer</b></div>
+            <select id="mkLayer" class="select" style="width:100%" ${canEdit?"":"disabled"}>
+              <option value="choreo" ${marker.layer==="choreo"?"selected":""}>Choreo</option>
+              <option value="comment" ${marker.layer==="comment"?"selected":""}>Comments</option>
+              <option value="formation" ${marker.layer==="formation"?"selected":""}>Formation Trigger</option>
+            </select>
+          </div>
+          <div style="flex:1" id="termWrap" ${marker.layer==="choreo"?"":"style='display:none'"}>
+            <div class="small"><b>Term</b></div>
+            <select id="mkTerm" class="select" style="width:100%" ${canEdit?"":"disabled"}>
+              <option value="">(none)</option>
+              ${termOptions}
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <div class="small"><b>Text</b></div>
+          <textarea id="mkText" class="textarea" placeholder="Optional details…" ${canEdit?"":"disabled"}>${escapeHtml(marker.text||"")}</textarea>
+        </div>
+
+        <div class="row" style="justify-content:space-between;">
+          <div class="stack" style="flex:1;">
+            <div class="small"><b>Timeline</b></div>
+            <div class="subtle">
+              ${marker.timeAnchorSec==null ? "Not linked" : `Linked at <span class="kbd">${fmtTime(marker.timeAnchorSec)}</span>`}
+            </div>
+          </div>
+          <div class="row">
+            <button class="btn" id="linkTimeBtn" ${canEdit?"":"disabled"}>Link to current time</button>
+            <button class="btn" id="jumpTimeBtn">Jump</button>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="row" style="justify-content:space-between;">
+          <span class="small"><b>ID:</b> <span class="kbd">${marker.id}</span></span>
+          <button class="btn danger" id="deleteMarkerBtn" ${canEdit?"":"disabled"}>Delete</button>
+        </div>
+      `;
+
+      openModal(title, body, [
+        { label:"Close", className:"btn", onClick: closeModal }
+      ]);
+
+      // handlers
+      const mkLayer = $("#mkLayer", body);
+      const mkTerm = $("#mkTerm", body);
+      const mkText = $("#mkText", body);
+      const termWrap = $("#termWrap", body);
+
+      if (mkLayer){
+        mkLayer.addEventListener("change", () => {
+          if (!canEdit) return;
+          marker.layer = mkLayer.value;
+          if (marker.layer !== "choreo"){ marker.termId = null; }
+          termWrap.style.display = marker.layer === "choreo" ? "" : "none";
+          saveState();
+          drawMarkers();
+          buildThumbnails();
+        });
+      }
+      if (mkTerm){
+        mkTerm.addEventListener("change", () => {
+          if (!canEdit) return;
+          marker.termId = mkTerm.value || null;
+          saveState();
+          drawMarkers();
+        });
+      }
+      mkText?.addEventListener("input", () => {
+        if (!canEdit) return;
+        marker.text = mkText.value;
+        saveState();
+        drawMarkers();
+        buildThumbnails();
+      });
+
+      $("#linkTimeBtn", body)?.addEventListener("click", () => {
+        if (!canEdit) return;
+        const t = getMasterTime();
+        if (t == null) return;
+        marker.timeAnchorSec = Math.max(0, t);
+        saveState();
+        drawMarkers();
+        closeModal();
+        openMarkerEditor(marker.id);
+      });
+
+      $("#jumpTimeBtn", body)?.addEventListener("click", () => {
+        if (marker.timeAnchorSec == null) return;
+        setMasterTime(marker.timeAnchorSec);
+      });
+
+      $("#deleteMarkerBtn", body)?.addEventListener("click", () => {
+        if (!canEdit) return;
+        song.markers = song.markers.filter(m => m.id !== marker.id);
+        state.ui.selectedMarkerId = null;
+        saveState();
+        closeModal();
+        drawMarkers();
+        buildThumbnails();
+      });
+    }
+
+    function highlightMarkersByTime(){
+      const song = getSong();
+      if (!song) return;
+
+      const t = getMasterTime();
+      const overlay = $("#overlay");
+      if (!overlay) return;
+
+      let activeCount = 0;
+
+      // consider active window +/- 1.0s
+      const win = 1.0;
+      for (const el of $$(".marker", overlay)){
+        const id = el.dataset.id;
+        const m = song.markers.find(x => x.id === id);
+        if (!m || m.timeAnchorSec == null || t == null){
+          el.classList.remove("active");
+          continue;
+        }
+        const isActive = Math.abs(m.timeAnchorSec - t) <= win;
+        if (isActive){
+          activeCount++;
+          el.classList.add("active");
+        } else {
+          // keep selected marker active as well
+          if (id === state.ui.selectedMarkerId) el.classList.add("active");
+          else el.classList.remove("active");
+        }
+      }
+      $("#activeMarkerPill").textContent = String(activeCount);
+    }
+
+    // =========================
+    // Word bank
+    // =========================
+    function getTermLabel(termId){
+      if (!termId) return null;
+      const t = state.production.wordBank.find(x => x.id === termId);
+      return t ? t.label : null;
+    }
+
+    function rebuildTermSelect(){
+      const sel = $("#termSelect");
+      const terms = state.production.wordBank.slice().sort((a,b)=> (a.category||"").localeCompare(b.category||"") || a.label.localeCompare(b.label));
+      sel.innerHTML = terms.map(t => `<option value="${t.id}">${escapeHtml(t.label)} (${escapeHtml(t.category||"")})</option>`).join("");
+      if (!state.ui.selectedTermId && terms.length){
+        state.ui.selectedTermId = terms[0].id;
+      }
+      sel.value = state.ui.selectedTermId || "";
+    }
+
+    function openAddTermModal(){
+      const body = document.createElement("div");
+      body.className = "stack";
+      body.innerHTML = `
+        <div class="subtle">Add a custom choreography term to the production word bank.</div>
+        <div class="row">
+          <input id="tLabel" class="input" placeholder="Term label (e.g., 'Box step')" />
+          <input id="tCat" class="input" placeholder="Category (e.g., Footwork)" />
+        </div>
+      `;
+      openModal("Add Term", body, [
+        { label:"Cancel", className:"btn", onClick: closeModal },
+        { label:"Add", className:"btn primary", onClick: () => {
+          const label = $("#tLabel", body).value.trim();
+          const category = $("#tCat", body).value.trim() || "Custom";
+          if (!label) return;
+          const term = { id: uid(), label, category };
+          state.production.wordBank.push(term);
+          state.ui.selectedTermId = term.id;
+          saveState();
+          rebuildTermSelect();
+          closeModal();
+        }}
+      ]);
+    }
+
+    // =========================
+    // Formations
+    // =========================
+    function buildAxis(){
+      const axis = $("#axis");
+      // Show 20L to 20R broken down in 2s, 0 center.
+      const ticks = [];
+      for (let n=-20; n<=20; n+=2){
+        const label = (n === 0) ? "0" : (n < 0 ? `${Math.abs(n)}L` : `${n}R`);
+        ticks.push(`<span class="tick">${label}</span>`);
+      }
+      axis.innerHTML = ticks.join("");
+    }
+
+    function renderFormationDots(){
+      const stage = $("#stage");
+      $$(".formationDot", stage).forEach(n => n.remove());
+
+      const rosterMap = new Map(state.production.roster.map(r => [r.id, r]));
+      for (const d of state.formation.dots){
+        const el = document.createElement("div");
+        el.className = "formationDot" + (d.assignedRosterId ? " assigned" : "");
+        el.style.left = (d.xPct * 100) + "%";
+        el.style.top  = (d.yPct * 100) + "%";
+        el.dataset.id = d.id;
+
+        const assigned = d.assignedRosterId ? rosterMap.get(d.assignedRosterId) : null;
+        const abbr = assigned ? initials(assigned.name) : "+";
+        el.innerHTML = `<div class="abbr">${escapeHtml(abbr)}</div>`;
+
+        // color by section if assigned
+        if (assigned){
+          el.style.background = (assigned.color || "rgba(122,162,255,.5)");
+        }
+
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+
+          // If a roster student is selected, assign/unassign.
+          if (state.ui.selectedRosterId){
+            const target = state.production.roster.find(r => r.id === state.ui.selectedRosterId);
+            if (!target) return;
+            d.assignedRosterId = (d.assignedRosterId === target.id) ? null : target.id;
+            state.ui.selectedRosterId = null;
+            saveState();
+            renderRoster();
+            renderFormationDots();
+            return;
+          }
+
+          // Otherwise open dot editor.
+          openFormationDotModal(d.id);
+        });
+
+        stage.appendChild(el);
+      }
+
+      $("#formationCountPill").textContent = `${state.formation.dots.length} dots`;
+      saveState();
+    }
+
+    function openFormationDotModal(dotId){
+      const d = state.formation.dots.find(x => x.id === dotId);
+      if (!d) return;
+
+      const canEdit = (state.role === "teacher") && !state.ui.rehearsalMode;
+
+      const rosterOptions = state.production.roster.map(r =>
+        `<option value="${r.id}" ${r.id===d.assignedRosterId?"selected":""}>${escapeHtml(r.name)} (${escapeHtml(r.section)})</option>`
+      ).join("");
+
+      const body = document.createElement("div");
+      body.className = "stack";
+      body.innerHTML = `
+        <div class="subtle">Formation dot</div>
+        <div class="row">
+          <div style="flex:1">
+            <div class="small"><b>Assign student</b></div>
+            <select id="dotAssign" class="select" style="width:100%" ${canEdit?"":"disabled"}>
+              <option value="">(unassigned)</option>
+              ${rosterOptions}
+            </select>
+          </div>
+        </div>
+        <div class="row" style="justify-content:space-between;">
+          <span class="small"><b>ID:</b> <span class="kbd">${d.id}</span></span>
+          <button class="btn danger" id="deleteDotBtn" ${canEdit?"":"disabled"}>Delete</button>
+        </div>
+      `;
+      openModal("Formation Dot", body, [
+        { label:"Close", className:"btn", onClick: closeModal }
+      ]);
+
+      $("#dotAssign", body)?.addEventListener("change", () => {
+        if (!canEdit) return;
+        d.assignedRosterId = $("#dotAssign", body).value || null;
+        saveState();
+        renderFormationDots();
+        renderRoster();
+      });
+
+      $("#deleteDotBtn", body)?.addEventListener("click", () => {
+        if (!canEdit) return;
+        state.formation.dots = state.formation.dots.filter(x => x.id !== d.id);
+        saveState();
+        renderFormationDots();
+        closeModal();
+      });
+    }
+
+    function applyFormationPreset(kind){
+      const stage = $("#stage");
+      const W = 1, H = 1;
+
+      if (kind === "clear"){
+        state.formation.dots = [];
+        saveState();
+        renderFormationDots();
+        return;
+      }
+
+      const dots = [];
+      if (kind === "arc"){
+        // simple arc of 16 dots
+        const count = 16;
+        for (let i=0;i<count;i++){
+          const t = i/(count-1);
+          const x = 0.15 + 0.70*t;
+          // arc curve
+          const y = 0.68 - 0.18*Math.sin(Math.PI*t);
+          dots.push({ id: uid(), xPct:x, yPct:y, assignedRosterId:null });
+        }
+      } else if (kind === "rows3"){
+        // 3 rows, 6 each (18)
+        const rows = 3, cols = 6;
+        for (let r=0;r<rows;r++){
+          for (let c=0;c<cols;c++){
+            const x = 0.15 + (0.70) * (c/(cols-1));
+            const y = 0.25 + (0.45) * (r/(rows-1));
+            dots.push({ id: uid(), xPct:x, yPct:y, assignedRosterId:null });
+          }
+        }
+      } else if (kind === "block"){
+        // 4 x 5 (20)
+        const rows = 4, cols = 5;
+        for (let r=0;r<rows;r++){
+          for (let c=0;c<cols;c++){
+            const x = 0.18 + (0.64) * (c/(cols-1));
+            const y = 0.18 + (0.58) * (r/(rows-1));
+            dots.push({ id: uid(), xPct:x, yPct:y, assignedRosterId:null });
+          }
+        }
+      }
+      state.formation.dots = dots;
+      saveState();
+      renderFormationDots();
+    }
+
+    function stageClickPlace(e){
+      if (!(state.role === "teacher") || state.ui.rehearsalMode) return;
+      if (!state.formation.clickPlace) return;
+
+      const stage = $("#stage");
+      const rect = stage.getBoundingClientRect();
+      const x = clamp(e.clientX - rect.left, 0, rect.width);
+      const y = clamp(e.clientY - rect.top, 0, rect.height);
+
+      state.formation.dots.push({
+        id: uid(),
+        xPct: x/rect.width,
+        yPct: y/rect.height,
+        assignedRosterId: null
+      });
+      saveState();
+      renderFormationDots();
+    }
+
+    function saveFormationSnapshot(){
+      const song = getSong();
+      if (!song) return;
+      if (!(state.role === "teacher") || state.ui.rehearsalMode) return;
+
+      const t = getMasterTime();
+      const snap = {
+        id: uid(),
+        timeAnchorSec: (t == null ? 0 : t),
+        dots: deepClone(state.formation.dots)
+      };
+      song.formationSnapshots.push(snap);
+      saveState();
+      openToast(`Saved formation snapshot @ ${fmtTime(snap.timeAnchorSec)}`);
+    }
+
+    function applyFormationFromTimeline(){
+      // When audio plays, if there’s a formation snapshot within +/- 1s, apply it (read-only switch).
+      const song = getSong();
+      const t = getMasterTime();
+      if (!song || t == null) return;
+      const win = 0.8;
+      const snaps = song.formationSnapshots || [];
+      const found = snaps.find(s => Math.abs((s.timeAnchorSec||0) - t) <= win);
+      if (found){
+        // Only auto-apply in rehearsal mode (or student mode)
+        if (state.ui.rehearsalMode || state.role === "student"){
+          state.formation.dots = deepClone(found.dots || []);
+          renderFormationDots();
+        }
+      }
+    }
+
+    // =========================
+    // Roster
+    // =========================
+    function renderRoster(){
+      const block = $("#rosterBlock");
+      const list = $("#rosterList");
+      const isTeacher = state.role === "teacher";
+      block.style.display = isTeacher ? "" : "none";
+      $("#analyticsBlock").style.display = isTeacher ? "" : "none";
+      $("#studentNotesBlock").style.display = (state.role === "student") ? "" : "none";
+
+      if (!isTeacher) return;
+
+      list.innerHTML = "";
+      for (const r of state.production.roster){
+        const item = document.createElement("div");
+        item.className = "chip" + (state.ui.selectedRosterId === r.id ? " active" : "");
+        item.style.borderColor = "rgba(42,53,100,.95)";
+        item.style.background = "rgba(15,23,48,.22)";
+        item.style.display = "flex";
+        item.style.justifyContent = "space-between";
+        item.style.gap = "10px";
+        item.style.width = "100%";
+        item.innerHTML = `
+          <span><b style="color:${escapeHtml(r.color||"#7aa2ff")}">●</b> ${escapeHtml(r.name)} <span class="badge">${escapeHtml(r.section)}</span></span>
+          <span class="small">${escapeHtml(r.tag||"")}</span>
+        `;
+        item.addEventListener("click", () => {
+          state.ui.selectedRosterId = (state.ui.selectedRosterId === r.id) ? null : r.id;
+          saveState();
+          renderRoster();
+        });
+
+        list.appendChild(item);
+      }
+    }
+
+    function addStudent(){
+      const name = $("#studentName").value.trim();
+      const section = $("#studentSection").value;
+      const color = ($("#sectionColor").value || "#7aa2ff").trim();
+      if (!name) return;
+      state.production.roster.push({ id: uid(), name, section, color, tag:"" });
+      $("#studentName").value = "";
+      saveState();
+      renderRoster();
+      renderFormationDots();
+    }
+
+    // =========================
+    // Audio engine (multi-track)
+    // =========================
+    // We treat the first track as “master clock” for sync. Others follow its time/play/pause.
+    function getMasterAudio(){
+      const list = $$("#trackList audio");
+      return list[0] || null;
+    }
+    function getMasterTime(){
+      const a = getMasterAudio();
+      return a ? a.currentTime : null;
+    }
+    function setMasterTime(t){
+      const tracks = $$("#trackList audio");
+      for (const a of tracks){
+        a.currentTime = t;
+      }
+      highlightMarkersByTime();
+    }
+
+    function syncAllToMaster(){
+      const master = getMasterAudio();
+      if (!master) return;
+      const tracks = $$("#trackList audio");
+      for (const a of tracks){
+        if (a === master) continue;
+        // keep them within 120ms
+        if (Math.abs(a.currentTime - master.currentTime) > 0.12){
+          a.currentTime = master.currentTime;
+        }
+      }
+    }
+
+    function setPlaying(isPlaying){
+      const tracks = $$("#trackList audio");
+      if (!tracks.length) return;
+      state.audio.masterPlaying = isPlaying;
+      saveState();
+      if (isPlaying){
+        startPracticeSessionIfNeeded();
+        for (const a of tracks){ a.playbackRate = state.audio.speed; a.play().catch(()=>{}); }
+      } else {
+        for (const a of tracks){ a.pause(); }
+      }
+    }
+
+    function stopAll(){
+      const tracks = $$("#trackList audio");
+      for (const a of tracks){
+        a.pause();
+        a.currentTime = 0;
+      }
+      state.audio.masterPlaying = false;
+      saveState();
+      endPracticeSessionIfNeeded();
+      highlightMarkersByTime();
+    }
+
+    function renderTracks(){
+      const song = getSong();
+      const list = $("#trackList");
+      list.innerHTML = "";
+
+      if (!song) return;
+
+      for (const t of song.audioTracks){
+        const wrap = document.createElement("div");
+        wrap.className = "track";
+        wrap.innerHTML = `
+          <div class="col" style="gap:8px;">
+            <div class="trackTitle">
+              <span>${escapeHtml(t.name)}</span>
+              <span class="badge">${escapeHtml(t.part||"")}</span>
+            </div>
+            <audio preload="metadata" src="${t.dataUrl}"></audio>
+            <div class="row">
+              <span class="small">Vol</span>
+              <input class="slider" type="range" min="0" max="1" step="0.01" value="${t.volume ?? 0.9}" />
+              <span class="pill" data-volpill>0.90</span>
+            </div>
+          </div>
+          <div class="trackControls">
+            <button class="btn" data-mute>${t.muted ? "Unmute" : "Mute"}</button>
+            <button class="btn" data-solo>${t.solo ? "Unsolo" : "Solo"}</button>
+            <button class="btn" data-remove>Remove</button>
+          </div>
+        `;
+
+        const audio = $("audio", wrap);
+        const slider = $(".slider", wrap);
+        const volPill = $("[data-volpill]", wrap);
+        const muteBtn = $("[data-mute]", wrap);
+        const soloBtn = $("[data-solo]", wrap);
+        const removeBtn = $("[data-remove]", wrap);
+
+        // apply initial
+        audio.volume = (t.volume ?? 0.9);
+        audio.muted = !!t.muted;
+        volPill.textContent = (t.volume ?? 0.9).toFixed(2);
+
+        slider.addEventListener("input", () => {
+          t.volume = parseFloat(slider.value);
+          audio.volume = t.volume;
+          volPill.textContent = t.volume.toFixed(2);
+          saveState();
+        });
+
+        muteBtn.addEventListener("click", () => {
+          t.muted = !t.muted;
+          audio.muted = t.muted;
+          muteBtn.textContent = t.muted ? "Unmute" : "Mute";
+          saveState();
+          applySoloLogic();
+        });
+
+        soloBtn.addEventListener("click", () => {
+          t.solo = !t.solo;
+          soloBtn.textContent = t.solo ? "Unsolo" : "Solo";
+          saveState();
+          applySoloLogic();
+        });
+
+        removeBtn.addEventListener("click", () => {
+          song.audioTracks = song.audioTracks.filter(x => x.id !== t.id);
+          saveState();
+          renderTracks();
+        });
+
+        // sync behavior
+        audio.addEventListener("timeupdate", () => {
+          // master clock update
+          highlightMarkersByTime();
+          updateTimePill();
+          applyFormationFromTimeline();
+          handleLoop();
+          if (audio === getMasterAudio()){
+            syncAllToMaster();
+          }
+        });
+
+        list.appendChild(wrap);
+      }
+
+      applySoloLogic();
+      updateTimePill();
+    }
+
+    function applySoloLogic(){
+      const song = getSong();
+      if (!song) return;
+      const anySolo = song.audioTracks.some(t => t.solo);
+      const wraps = $$("#trackList .track");
+      wraps.forEach((wrap, i) => {
+        const audio = $("audio", wrap);
+        const track = song.audioTracks[i];
+        if (!audio || !track) return;
+        if (anySolo){
+          audio.muted = !track.solo;
+        } else {
+          audio.muted = !!track.muted;
+        }
+      });
+    }
+
+    function updateTimePill(){
+      const t = getMasterTime();
+      $("#timePill").textContent = t == null ? "0:00" : fmtTime(t);
+    }
+
+    function handleLoop(){
+      if (!state.audio.loop.enabled) return;
+      const master = getMasterAudio();
+      if (!master) return;
+      const a = state.audio.loop.a;
+      const b = state.audio.loop.b;
+      if (a == null || b == null) return;
+      if (master.currentTime > b){
+        setMasterTime(a);
+      }
+    }
+
+    // =========================
+    // Practice analytics (local demo)
+    // =========================
+    function startPracticeSessionIfNeeded(){
+      if (state.role !== "student") return;
+      if (state.runtime.currentSessionId) return;
+
+      const song = getSong();
+      if (!song) return;
+
+      const sid = state.student.id || (state.student.id = uid());
+      const session = {
+        id: uid(),
+        studentId: sid,
+        studentName: state.student.displayName || "Student",
+        songId: song.id,
+        startedAt: Date.now(),
+        endedAt: null,
+        seconds: 0,
+        events: []
+      };
+      state.production.analytics.sessions.push(session);
+      state.runtime.currentSessionId = session.id;
+      state.runtime.lastTick = Date.now();
+      saveState();
+    }
+
+    function tickPracticeTime(){
+      if (!state.runtime.currentSessionId) return;
+      const session = state.production.analytics.sessions.find(s => s.id === state.runtime.currentSessionId);
+      if (!session) return;
+      const now = Date.now();
+      const dt = (now - (state.runtime.lastTick || now)) / 1000;
+      state.runtime.lastTick = now;
+      // only count while actually playing
+      if (state.audio.masterPlaying){
+        session.seconds += dt;
+      }
+      saveState();
+    }
+
+    function endPracticeSessionIfNeeded(){
+      if (!state.runtime.currentSessionId) return;
+      const session = state.production.analytics.sessions.find(s => s.id === state.runtime.currentSessionId);
+      if (session){
+        session.endedAt = Date.now();
+      }
+      state.runtime.currentSessionId = null;
+      state.runtime.lastTick = 0;
+      saveState();
+    }
+
+    function refreshAnalytics(){
+      const box = $("#analyticsSummary");
+      const table = $("#analyticsTable");
+      if (state.role !== "teacher"){
+        box.innerHTML = "";
+        table.innerHTML = "";
+        return;
+      }
+
+      const sessions = state.production.analytics.sessions || [];
+      const byStudent = new Map();
+
+      for (const s of sessions){
+        const key = s.studentName || s.studentId;
+        const cur = byStudent.get(key) || { name:key, seconds:0, sessions:0, last:0 };
+        cur.seconds += (s.seconds || 0);
+        cur.sessions += 1;
+        cur.last = Math.max(cur.last, s.endedAt || s.startedAt || 0);
+        byStudent.set(key, cur);
+      }
+
+      const rows = Array.from(byStudent.values()).sort((a,b)=> b.seconds - a.seconds);
+
+      const totalSec = sessions.reduce((acc,s)=> acc+(s.seconds||0), 0);
+      box.innerHTML = `
+        Total practice recorded: <b>${fmtTime(totalSec)}</b><br/>
+        Students: <b>${rows.length}</b> • Sessions: <b>${sessions.length}</b>
+      `;
+
+      table.innerHTML = "";
+      for (const r of rows){
+        const el = document.createElement("div");
+        el.className = "thumb";
+        el.innerHTML = `
+          <div class="row" style="justify-content:space-between;">
+            <div><b>${escapeHtml(r.name)}</b></div>
+            <span class="pill">${fmtTime(r.seconds)}</span>
+          </div>
+          <div class="small" style="margin-top:6px;">
+            Sessions: ${r.sessions} • Last: ${r.last ? new Date(r.last).toLocaleString() : "—"}
+          </div>
+        `;
+        table.appendChild(el);
+      }
+    }
+
+    // =========================
+    // Sections (page-section labels)
+    // =========================
+    function rebuildSectionSelect(){
+      const song = getSong();
+      const sel = $("#sectionSelect");
+      sel.innerHTML = `<option value="">Jump to section…</option>`;
+      if (!song) return;
+      for (const s of (song.sections || [])){
+        const opt = document.createElement("option");
+        opt.value = s.id;
+        opt.textContent = s.label;
+        sel.appendChild(opt);
+      }
+    }
+
+    // =========================
+    // Playlist
+    // =========================
+    function rebuildSongSelect(){
+      const sel = $("#songSelect");
+      const pl = state.production.playlist || [];
+      sel.innerHTML = `<option value="">Select a song…</option>` + pl.map(item => {
+        const label = item.type === "warmups" ? `Warmups • ${item.title}` : item.title;
+        return `<option value="${item.id}" ${item.id===state.ui.selectedSongId?"selected":""}>${escapeHtml(label)}</option>`;
+      }).join("");
+    }
+
+    function setSong(songId){
+      if (!songId) return;
+      state.ui.selectedSongId = songId;
+      state.pdf.page = 1;
+      state.ui.selectedMarkerId = null;
+      state.ui.selectedRosterId = null;
+
+      // reset PDF doc object (reloaded per song)
+      pdfDoc = null;
+      renderTracks();
+      rebuildSectionSelect();
+      saveState();
+      // load pdf if present
+      const song = getSong();
+      if (song?.pdf?.dataUrl){
+        loadPdfFromDataUrl(song.pdf.dataUrl).then(renderPage).catch(err => {
+          openToast("Failed to load PDF");
+          console.error(err);
+        });
+      } else {
+        renderPage();
+      }
+
+      // student notes reload
+      loadStudentNotes();
+    }
+
+    function getSong(){
+      return state.production.songs[state.ui.selectedSongId] || null;
+    }
+
+    // =========================
+    // Account / Role (Teacher vs Student)
+    // =========================
+    function openAccountModal(){
+      const body = document.createElement("div");
+      body.className = "stack";
+
+      const role = state.role;
+
+      body.innerHTML = `
+        <div class="subtle">
+          Choose <b>Teacher</b> (full setup/editing) or <b>Student</b> (access code, read-only + personal notes).
+        </div>
+        <div class="row">
+          <button class="btn primary" id="chooseTeacher">Teacher</button>
+          <button class="btn primary" id="chooseStudent">Student</button>
+        </div>
+
+        <div class="divider"></div>
+
+        <div id="teacherFields" style="display:${role==="teacher"?"":"none"}">
+          <div class="small"><b>Teacher account (demo)</b></div>
+          <div class="row">
+            <input id="tEmail" class="input" placeholder="Email" value="${escapeHtml(state.teacher.email||"")}" />
+            <input id="tName" class="input" placeholder="Display name" value="${escapeHtml(state.teacher.displayName||"")}" />
+          </div>
+          <div class="row">
+            <button class="btn" id="saveTeacher">Save Teacher</button>
+            <span class="pill">Access code: <span class="kbd" id="codePill">${escapeHtml(state.production.accessCode)}</span></span>
+          </div>
+        </div>
+
+        <div id="studentFields" style="display:${role==="student"?"":"none"}">
+          <div class="small"><b>Student join (demo)</b></div>
+          <div class="row">
+            <input id="sName" class="input" placeholder="Student name" value="${escapeHtml(state.student.displayName||"")}" />
+            <input id="sCode" class="input" placeholder="Access code" value="${escapeHtml(state.student.accessCode||"")}" />
+          </div>
+          <div class="row">
+            <button class="btn" id="joinStudent">Join</button>
+            <span class="badge">Read-only + personal notes</span>
+          </div>
+          <div class="subtle">Demo access code is <span class="kbd">${escapeHtml(state.production.accessCode)}</span>.</div>
+        </div>
+      `;
+
+      openModal("Account", body, [
+        { label:"Close", className:"btn", onClick: closeModal }
+      ]);
+
+      $("#chooseTeacher", body).addEventListener("click", () => {
+        state.role = "teacher";
+        state.ui.rehearsalMode = false;
+        saveState();
+        closeModal();
+        openAccountModal();
+        updateRoleUi();
+      });
+
+      $("#chooseStudent", body).addEventListener("click", () => {
+        state.role = "student";
+        state.ui.rehearsalMode = true; // students default to rehearsal
+        saveState();
+        closeModal();
+        openAccountModal();
+        updateRoleUi();
+      });
+
+      $("#saveTeacher", body)?.addEventListener("click", () => {
+        state.teacher.email = $("#tEmail", body).value.trim();
+        state.teacher.displayName = $("#tName", body).value.trim();
+        saveState();
+        closeModal();
+        updateRoleUi();
+      });
+
+      $("#joinStudent", body)?.addEventListener("click", () => {
+        const name = $("#sName", body).value.trim();
+        const code = $("#sCode", body).value.trim();
+        if (!name || !code){
+          openToast("Enter your name and access code.");
+          return;
+        }
+        if (code !== state.production.accessCode){
+          openToast("Invalid code (demo expects the production code).");
+          return;
+        }
+        state.student.displayName = name;
+        state.student.accessCode = code;
+        state.student.id = state.student.id || uid();
+        saveState();
+        closeModal();
+        updateRoleUi();
+      });
+    }
+
+    function updateRoleUi(){
+      $("#roleBadge").textContent = state.role ? state.role.toUpperCase() : "NO ROLE";
+      $("#editBadge").textContent = state.ui.rehearsalMode ? "REHEARSAL" : "EDIT";
+      $("#modePill").textContent = `Mode: ${state.ui.rehearsalMode ? "Rehearsal" : "Edit"}`;
+
+      const canEdit = (state.role === "teacher") && !state.ui.rehearsalMode;
+
+      $("#togglePlaceBtn").disabled = !canEdit;
+      $("#uploadPdfBtn").disabled = !canEdit;
+      $("#uploadAudioBtn").disabled = !canEdit;
+      $("#addTermBtn").disabled = !canEdit;
+      $("#addStudentBtn").disabled = !canEdit;
+      $("#saveFormationSnapshotBtn").disabled = !canEdit;
+
+      // student notes visible only for student
+      renderRoster();
+      refreshAnalytics();
+      drawMarkers();
+    }
+
+    // =========================
+    // Export / Import (cloud sync placeholder)
+    // =========================
+    function exportJson(){
+      const data = deepClone(state);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type:"application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `choreoCoach_export_${new Date().toISOString().slice(0,10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      openToast("Exported JSON.");
+    }
+
+    function ensureSongPageModel(song, pageNum){
+  song.pages ??= {};
+  song.pages[pageNum] ??= {
+    choreo: [],
+    formations: [],
+    comments: [],
+    layers: { choreo: true, formations: true, comments: true }
+  };
+  return song.pages[pageNum];
+}
+
+    
+    function importJsonFile(file){
+      const reader = new FileReader();
+      reader.onload = () => {
+        try{
+          const incoming = JSON.parse(String(reader.result));
+          state = incoming;
+          // rehydrate some defaults if missing
+          state.production = state.production || deepClone(defaultProduction);
+          saveState();
+          openToast("Imported JSON.");
+          // reset runtime PDF doc and repaint
+          pdfDoc = null;
+          rebuildEverything();
+        }catch(e){
+          console.error(e);
+          openToast("Import failed (invalid JSON).");
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    // =========================
+    // Student notes
+    // =========================
+    function notesKey(){
+      const song = getSong();
+      if (!song) return null;
+      const sid = state.student.id || "student";
+      return `notes_${sid}_${song.id}`;
+    }
+    function loadStudentNotes(){
+      if (state.role !== "student") return;
+      const key = notesKey();
+      if (!key) return;
+      $("#studentNotes").value = localStorage.getItem(key) || "";
+    }
+    function saveStudentNotes(){
+      if (state.role !== "student") return;
+      const key = notesKey();
+      if (!key) return;
+      localStorage.setItem(key, $("#studentNotes").value);
+      openToast("Notes saved.");
+    }
+
+    // =========================
+    // Modal helpers
+    // =========================
+    function openModal(title, bodyNode, buttons){
+      $("#modalTitle").textContent = title;
+      const body = $("#modalBody");
+      body.innerHTML = "";
+      body.appendChild(bodyNode);
+
+      const footer = $("#modalFooter");
+      footer.innerHTML = "";
+      for (const b of buttons){
+        const btn = document.createElement("button");
+        btn.className = b.className || "btn";
+        btn.textContent = b.label;
+        btn.addEventListener("click", b.onClick);
+        footer.appendChild(btn);
+      }
+      $("#modalBackdrop").classList.add("on");
+    }
+    function closeModal(){
+      $("#modalBackdrop").classList.remove("on");
+    }
+
+    // =========================
+    // Tiny toast
+    // =========================
+    let toastTimer = null;
+    function openToast(msg){
+      clearTimeout(toastTimer);
+      let t = $("#__toast");
+      if (!t){
+        t = document.createElement("div");
+        t.id = "__toast";
+        t.style.position = "fixed";
+        t.style.left = "50%";
+        t.style.bottom = "18px";
+        t.style.transform = "translateX(-50%)";
+        t.style.padding = "10px 12px";
+        t.style.borderRadius = "14px";
+        t.style.border = "1px solid rgba(42,53,100,.95)";
+        t.style.background = "rgba(18,26,51,.95)";
+        t.style.boxShadow = "0 16px 40px rgba(0,0,0,.45)";
+        t.style.color = "rgba(231,236,255,.95)";
+        t.style.zIndex = "60";
+        t.style.maxWidth = "min(720px, 92vw)";
+        t.style.textAlign = "center";
+        document.body.appendChild(t);
+      }
+      t.textContent = msg;
+      t.style.display = "";
+      toastTimer = setTimeout(() => { t.style.display = "none"; }, 2200);
+    }
+
+    // =========================
+    // Small helpers
+    // =========================
+    function escapeHtml(s){
+      return String(s ?? "")
+        .replaceAll("&","&amp;")
+        .replaceAll("<","&lt;")
+        .replaceAll(">","&gt;")
+        .replaceAll('"',"&quot;")
+        .replaceAll("'","&#039;");
+    }
+    function initials(name){
+      const parts = String(name||"").trim().split(/\s+/).slice(0,2);
+      return parts.map(p => p[0]?.toUpperCase() || "").join("") || "?";
+    }
+
+    // =========================
+    // UI wiring
+    // =========================
+    function rebuildEverything(){
+  const song = getSong?.();
+  if (!song){
+    console.warn("[rebuildEverything] No song selected yet.");
+    return;
+  }
+
+  // If your code expects song.choreo to exist, ensure it:
+  song.choreo ??= {};
+  const pageKey = String(state.pdf?.page || 1);
+  song.choreo[pageKey] ??= []; // <-- this prevents undefined.choreo patterns
+
+  // ...rest of your existing rebuildEverything...
+      rebuildSongSelect();
+      rebuildTermSelect();
+      rebuildSectionSelect();
+      buildAxis();
+      renderTracks();
+      renderRoster();
+      refreshAnalytics();
+      updateRoleUi();
+      renderFormationDots();
+      buildThumbnails();
+      renderPage();
+      loadStudentNotes();
+    
+      // update layer chips
+      state.ui.activeLayers ??= { choreo: true, formation: true, comment: true };
+
+      $("#layerChoreo")?.classList.toggle("active", !!state.ui.activeLayers.choreo);
+      $("#layerFormations")?.classList.toggle("active", !!state.ui.activeLayers.formation);
+      $("#layerComments")?.classList.toggle("active", !!state.ui.activeLayers.comment);
+
+      $("#filterAll")?.classList.toggle("active", !state.ui.filterWithMarkers);
+      $("#filterWithMarkers")?.classList.toggle("active", !!state.ui.filterWithMarkers);
+
+      $("#togglePlaceBtn") && ($("#togglePlaceBtn").textContent = `Place: ${state.ui.placing ? "On" : "Off"}`);
+      $("#toggleLoop") && ($("#toggleLoop").textContent = state.audio.loop.enabled ? "Loop On" : "Loop Off");
+      $("#loopPill") && ($("#loopPill").textContent = `A: ${state.audio.loop.a==null?"—":fmtTime(state.audio.loop.a)} | B: ${state.audio.loop.b==null?"—":fmtTime(state.audio.loop.b)}`);
+      $("#speedPill") && ($("#speedPill").textContent = `${state.audio.speed.toFixed(2)}×`);
+      $("#toggleRehearsalBtn") && ($("#toggleRehearsalBtn").textContent = state.ui.rehearsalMode ? "Edit Mode" : "Rehearsal Mode");
+      $("#togglePdfBtn") && ($("#togglePdfBtn").textContent = state.ui.pdfCollapsed ? "Expand PDF" : "Collapse PDF");
+
+      $("#stageGrid").classList.toggle("on", state.formation.grid);
+      $("#toggleGrid").classList.toggle("active", state.formation.grid);
+      $("#formationClickMode").textContent = `Place dots: ${state.formation.clickPlace ? "On" : "Off"}`;
+      $("#formationClickMode").classList.toggle("active", state.formation.clickPlace);
+
+      $("#toggleFormationBtn").textContent = state.ui.formationCollapsed ? "Expand" : "Collapse";
+      $("#formationBlock").style.display = state.ui.formationCollapsed ? "none" : "";
+
+      // panels collapsed
+      $("#leftPanel").style.display = state.ui.leftCollapsed ? "none" : "";
+      $("#rightPanel").style.display = state.ui.rightCollapsed ? "none" : "";
+
+      // pdf collapsed
+      $("#pdfBody").style.display = state.ui.pdfCollapsed ? "none" : "";
+    }
+
+    // -------------------------
+    // Event bindings
+    // -------------------------
+    $("#accountBtn").addEventListener("click", openAccountModal);
+    $("#modalCloseBtn").addEventListener("click", closeModal);
+    $("#modalBackdrop").addEventListener("click", (e) => {
+      if (e.target === $("#modalBackdrop")) closeModal();
+    });
+
+    $("#songSelect").addEventListener("change", () => setSong($("#songSelect").value));
+
+    $("#toggleRehearsalBtn").addEventListener("click", () => {
+      if (!state.role){
+        openToast("Choose Teacher or Student first.");
+        openAccountModal();
+        return;
+      }
+      // teachers can toggle; students always rehearsal in this demo
+      if (state.role === "student"){
+        state.ui.rehearsalMode = true;
+      } else {
+        state.ui.rehearsalMode = !state.ui.rehearsalMode;
+      }
+      // turning rehearsal on should end session if needed
+      if (state.ui.rehearsalMode && state.role === "student"){
+        // still can practice; keep session logic as is
+      }
+      saveState();
+      rebuildEverything();
+    });
+
+    $("#exportBtn").addEventListener("click", exportJson);
+    $("#importBtn").addEventListener("click", () => $("#importFileInput").click());
+    $("#importFileInput").addEventListener("change", (e) => {
+      const f = e.target.files?.[0];
+      e.target.value = "";
+      if (f) importJsonFile(f);
+    });
+
+    // Left panel filter
+    $("#filterAll").addEventListener("click", () => {
+      state.ui.filterWithMarkers = false;
+      saveState();
+      rebuildEverything();
+    });
+    $("#filterWithMarkers").addEventListener("click", () => {
+      state.ui.filterWithMarkers = true;
+      saveState();
+      rebuildEverything();
+    });
+
+    // Collapses
+    $("#collapseLeftBtn").addEventListener("click", () => {
+      state.ui.leftCollapsed = !state.ui.leftCollapsed;
+      saveState();
+      rebuildEverything();
+    });
+    $("#collapseRightBtn").addEventListener("click", () => {
+      state.ui.rightCollapsed = !state.ui.rightCollapsed;
+      saveState();
+      rebuildEverything();
+    });
+
+    // PDF controls
+    $("#togglePdfBtn").addEventListener("click", () => {
+      state.ui.pdfCollapsed = !state.ui.pdfCollapsed;
+      saveState();
+      rebuildEverything();
+    });
+
+    $("#uploadPdfBtn").addEventListener("click", () => {
+      if (!(state.role === "teacher") || state.ui.rehearsalMode){
+        openToast("Teacher edit mode required.");
+        return;
+      }
+      $("#pdfFileInput").click();
+    });
+
+    $("#pdfFileInput").addEventListener("change", (e) => {
+  const f = e.target.files?.[0];
+  e.target.value = "";
+  if (!f) return;
+
+  console.log("[PDF] selected:", f.name, f.type, f.size);
+
+  const reader = new FileReader();
+
+  reader.onerror = () => {
+    console.error("[PDF] FileReader error:", reader.error);
+    openToast("PDF read failed (FileReader error).");
+  };
+
+  reader.onload = async () => {
+    try {
+      const dataUrl = String(reader.result);
+      console.log("[PDF] dataUrl starts with:", dataUrl.slice(0, 30));
+
+      const song = getSong();
+      if (!song) {
+        console.warn("[PDF] No song selected.");
+        openToast("Select a song first.");
+        return;
+      }
+
+      song.pdf = { name: f.name, dataUrl };
+      state.pdf.page = 1;
+      pdfDoc = null;
+      saveState();
+
+      console.log("[PDF] calling loadPdfFromDataUrl...");
+      await loadPdfFromDataUrl(dataUrl);
+
+      console.log("[PDF] rendering page...");
+      await renderPage();
+
+      openToast("PDF uploaded.");
+    } catch (err) {
+      console.error("[PDF] upload handler failed:", err);
+      openToast("PDF upload failed — check console.");
+    }
+  };
+
+  reader.readAsDataURL(f);
+});
+
+    $("#prevPageBtn").addEventListener("click", () => {
+      if (!pdfDoc) return;
+      state.pdf.page = clamp(state.pdf.page - 1, 1, state.pdf.numPages);
+      saveState();
+      renderPage();
+    });
+    $("#nextPageBtn").addEventListener("click", () => {
+      if (!pdfDoc) return;
+      state.pdf.page = clamp(state.pdf.page + 1, 1, state.pdf.numPages);
+      saveState();
+      renderPage();
+    });
+    $("#zoomOutBtn").addEventListener("click", () => {
+      state.pdf.scale = clamp(state.pdf.scale - 0.1, 0.6, 2.6);
+      saveState();
+      renderPage();
+    });
+    $("#zoomInBtn").addEventListener("click", () => {
+      state.pdf.scale = clamp(state.pdf.scale + 0.1, 0.6, 2.6);
+      saveState();
+      renderPage();
+    });
+
+    // Clicking on the PDF to place markers
+    $("#pageWrap").addEventListener("click", (e) => {
+      const song = getSong();
+      if (!song?.pdf) return;
+
+      const canEdit = (state.role === "teacher") && !state.ui.rehearsalMode;
+      if (!canEdit) return;
+
+      if (!state.ui.placing) return;
+
+      // place marker
+      placeMarkerAtClick(e.clientX, e.clientY);
+    });
+
+    // Placement toggle + layer
+    $("#togglePlaceBtn").addEventListener("click", () => {
+      const canEdit = (state.role === "teacher") && !state.ui.rehearsalMode;
+      if (!canEdit) return;
+      state.ui.placing = !state.ui.placing;
+      saveState();
+      rebuildEverything();
+    });
+
+    $("#layerSelect").addEventListener("change", () => {
+      state.ui.placeLayer = $("#layerSelect").value;
+      saveState();
+    });
+
+    // Layers toggles
+    $("#layerChoreo").addEventListener("click", () => {
+      state.ui.activeLayers.choreo = !state.ui.activeLayers.choreo;
+      saveState();
+      rebuildEverything();
+    });
+    $("#layerFormations").addEventListener("click", () => {
+      state.ui.activeLayers.formation = !state.ui.activeLayers.formation;
+      saveState();
+      rebuildEverything();
+    });
+    $("#layerComments").addEventListener("click", () => {
+      state.ui.activeLayers.comment = !state.ui.activeLayers.comment;
+      saveState();
+      rebuildEverything();
+    });
+
+    // Word bank select + add term
+    $("#termSelect").addEventListener("change", () => {
+      state.ui.selectedTermId = $("#termSelect").value || null;
+      saveState();
+    });
+    $("#addTermBtn").addEventListener("click", () => {
+      const canEdit = (state.role === "teacher") && !state.ui.rehearsalMode;
+      if (!canEdit) return;
+      openAddTermModal();
+    });
+
+    // Formations controls
+    $("#toggleFormationBtn").addEventListener("click", () => {
+      state.ui.formationCollapsed = !state.ui.formationCollapsed;
+      saveState();
+      rebuildEverything();
+    });
+
+    $("#toggleGrid").addEventListener("click", () => {
+      state.formation.grid = !state.formation.grid;
+      saveState();
+      rebuildEverything();
+    });
+
+    $("#formationClickMode").addEventListener("click", () => {
+      const canEdit = (state.role === "teacher") && !state.ui.rehearsalMode;
+      if (!canEdit) return;
+      state.formation.clickPlace = !state.formation.clickPlace;
+      saveState();
+      rebuildEverything();
+    });
+
+    $("#formationPreset").addEventListener("change", () => {
+      const canEdit = (state.role === "teacher") && !state.ui.rehearsalMode;
+      if (!canEdit) return;
+      applyFormationPreset($("#formationPreset").value);
+    });
+
+    $("#stage").addEventListener("click", stageClickPlace);
+    $("#saveFormationSnapshotBtn").addEventListener("click", saveFormationSnapshot);
+
+    // Roster
+    $("#addStudentBtn").addEventListener("click", addStudent);
+
+    // Analytics
+    $("#refreshAnalyticsBtn").addEventListener("click", refreshAnalytics);
+    $("#clearAnalyticsBtn").addEventListener("click", () => {
+      if (state.role !== "teacher") return;
+      state.production.analytics.sessions = [];
+      saveState();
+      refreshAnalytics();
+      openToast("Analytics cleared.");
+    });
+
+    // Section jump
+    $("#sectionSelect").addEventListener("change", () => {
+      const song = getSong();
+      const id = $("#sectionSelect").value;
+      if (!song || !id) return;
+      const sec = (song.sections || []).find(s => s.id === id);
+      if (!sec) return;
+      // Basic behavior: jump to the section’s page (y anchor is stubbed)
+      if (pdfDoc){
+        state.pdf.page = clamp(sec.page || 1, 1, state.pdf.numPages);
+        saveState();
+        renderPage();
+      }
+      // optional: set time anchors later
+    });
+
+    // Audio controls
+    $("#uploadAudioBtn").addEventListener("click", () => {
+      const canEdit = (state.role === "teacher") && !state.ui.rehearsalMode;
+      if (!canEdit) return;
+      $("#audioFileInput").click();
+    });
+
+    $("#audioFileInput").addEventListener("change", (e) => {
+      const f = e.target.files?.[0];
+      e.target.value = "";
+      if (!f) return;
+
+      const body = document.createElement("div");
+      body.className = "stack";
+      body.innerHTML = `
+        <div class="subtle">Add audio track</div>
+        <div class="row">
+          <input id="aName" class="input" placeholder="Track name" value="${escapeHtml(f.name.replace(/\.[^/.]+$/, ""))}" />
+          <select id="aPart" class="select" style="min-width:160px;">
+            <option value="">(no tag)</option>
+            <option value="Trebles">Trebles</option>
+            <option value="Lows">Lows</option>
+            <option value="Soprano">Soprano</option>
+            <option value="Alto">Alto</option>
+            <option value="Tenor">Tenor</option>
+            <option value="Bass">Bass</option>
+            <option value="Accompaniment">Accompaniment</option>
+            <option value="Guide">Guide</option>
+          </select>
+        </div>
+        <div class="subtle">This demo stores audio as a Data URL (fine for small files; for real use, upload to storage).</div>
+      `;
+
+      openModal("Add Track", body, [
+        { label:"Cancel", className:"btn", onClick: closeModal },
+        { label:"Add", className:"btn primary", onClick: () => {
+          const name = $("#aName", body).value.trim() || "Track";
+          const part = $("#aPart", body).value || "";
+          const reader = new FileReader();
+          reader.onload = () => {
+            const dataUrl = String(reader.result);
+            const song = getSong();
+            song.audioTracks.push({
+              id: uid(),
+              name,
+              part,
+              dataUrl,
+              volume: 0.9,
+              muted: false,
+              solo: false
+            });
+            saveState();
+            renderTracks();
+            closeModal();
+            openToast("Track added.");
+          };
+          reader.readAsDataURL(f);
+        }}
+      ]);
+    });
+
+    $("#playBtn").addEventListener("click", () => setPlaying(true));
+    $("#pauseBtn").addEventListener("click", () => setPlaying(false));
+    $("#stopBtn").addEventListener("click", stopAll);
+
+    $("#speed").addEventListener("input", () => {
+      state.audio.speed = parseFloat($("#speed").value);
+      $("#speedPill").textContent = `${state.audio.speed.toFixed(2)}×`;
+      const tracks = $$("#trackList audio");
+      for (const a of tracks){ a.playbackRate = state.audio.speed; }
+      saveState();
+    });
+
+    $("#setLoopA").addEventListener("click", () => {
+      const t = getMasterTime();
+      if (t == null) return;
+      state.audio.loop.a = t;
+      saveState();
+      rebuildEverything();
+    });
+    $("#setLoopB").addEventListener("click", () => {
+      const t = getMasterTime();
+      if (t == null) return;
+      state.audio.loop.b = t;
+      saveState();
+      rebuildEverything();
+    });
+    $("#toggleLoop").addEventListener("click", () => {
+      state.audio.loop.enabled = !state.audio.loop.enabled;
+      saveState();
+      rebuildEverything();
+    });
+
+    // Student notes
+    $("#saveNotesBtn").addEventListener("click", saveStudentNotes);
+
+    // Periodic tick for practice time
+    setInterval(() => {
+      tickPracticeTime();
+      highlightMarkersByTime();
+    }, 1000);
+
+    // =========================
+    // Boot
+    // =========================
+   function boot(){
+    // If no role chosen, show account modal once
+    if (!state.role){
+      state.ui.rehearsalMode = true;
+      saveState();
+      openAccountModal();
+    }
+  
+    // ✅ set song first so rebuildEverything has something to read
+    setSong(state.ui.selectedSongId || "warmups");
+  
+    rebuildEverything();
+    syncPulse();
+  }
+
+    // Wait for pdf.js to be ready (defer script)
+    window.addEventListener("load", boot);
+    
+document.getElementById('resetLayoutBtn')?.addEventListener('click', () => {
+  state.ui.pdfCollapsed = false;
+  state.ui.formationCollapsed = false;
+  state.ui.thumbsCollapsed = false;
+  state.ui.audioCollapsed = false;
+
+  saveState();
+  rebuildEverything();
+});
+    
+  </script>
+
+<!-- Reset Panels Button -->
+<button id="resetPanelsBtn"
+  style="
+    position:fixed;
+    top:12px;
+    right:12px;
+    z-index:9999;
+    padding:8px 14px;
+    border-radius:999px;
+    border:none;
+    background:#7aa2ff;
+    color:#111;
+    font-weight:600;
+    cursor:pointer;
+    box-shadow:0 8px 18px rgba(0,0,0,.35);
+  "
+>
+  Reset Panels
+</button>
+
+<script>
+  document.getElementById("resetPanelsBtn").addEventListener("click", function(){
+    // Show common panel types
+    document.querySelectorAll(".panel, .sidepanel, .drawer, .sidebar").forEach(el => {
+      el.style.display = "";
+      el.classList.remove("collapsed", "hidden", "is-hidden");
+    });
+
+    // If you use specific IDs, force them visible too
+    ["leftPanel", "rightPanel", "topPanel", "bottomPanel"].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.style.display = "";
+        el.classList.remove("collapsed", "hidden", "is-hidden");
+      }
+    });
+  });
+</script>
+
+</body>
+</html>
